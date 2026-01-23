@@ -21,6 +21,8 @@ public partial class MonAn
 
     public string? ChuThich { get; set; }
 
+    
+
     public virtual ICollection<ChiTietDonHang> ChiTietDonHangs { get; set; } = new List<ChiTietDonHang>();
 
     public virtual ICollection<ChiTietHoaDon> ChiTietHoaDons { get; set; } = new List<ChiTietHoaDon>();
