@@ -10,7 +10,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 //Kết nối với database SQL Server
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection"); builder.Services.AddDbContext<QuanLyQuanCafeDbContext>(options => options.UseSqlServer(connectionString));
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+builder.Services.AddDbContext<QuanLyQuanCafeDbContext>(options => options.UseSqlServer(connectionString));
 //Cấp quyền API
 builder.Services.AddCors(options => {
     options.AddPolicy("AllowVueApp",
@@ -18,14 +19,7 @@ builder.Services.AddCors(options => {
                         .AllowAnyMethod()
                         .AllowAnyHeader());
 });
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-builder.Services.AddDbContext<QuanLyQuanCafeDbContext>(options => options.UseSqlServer(connectionString));
 
-// Cấu hình CORS vue
-builder.Services.AddCors(options => {
-    options.AddPolicy("AllowVueApp", policy =>
-        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
-});
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
