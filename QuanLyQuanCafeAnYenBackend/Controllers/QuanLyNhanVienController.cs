@@ -45,23 +45,17 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         [HttpPost]
         public async Task<ActionResult<NhanVien>> ThemNhanVien(NhanVien nvMoi)
         {
-
             if (_db.NhanViens.Any(n => n.MaNhanVien == nvMoi.MaNhanVien))
-            {
-                return BadRequest(new { errors = new { MaNhanVien = new[] { "Mã nhân viên này đã tồn tại trong hệ thống" } } });
-            }
+                ModelState.AddModelError("MaNhanVien", "Mã nhân viên này đã tồn tại.");
 
             if (_db.NhanViens.Any(n => n.SoDienThoai == nvMoi.SoDienThoai))
-            {
-                return BadRequest(new { errors = new { SoDienThoai = new[] { "Số điện thoại này đã được sử dụng" } } });
-            }
+                ModelState.AddModelError("SoDienThoai", "Số điện thoại này đã được sử dụng.");
 
             if (_db.NhanViens.Any(n => n.Email == nvMoi.Email))
-            {
-                return BadRequest(new { errors = new { Email = new[] { "Email này đã tồn tại" } } });
-            }
+                ModelState.AddModelError("Email", "Email này đã tồn tại trong hệ thống.");
 
-          
+            if (!ModelState.IsValid) return ValidationProblem(ModelState);
+
             _db.NhanViens.Add(nvMoi);
             await _db.SaveChangesAsync();
             return CreatedAtAction("ChiTietNhanVien", new { maNhanVien = nvMoi.MaNhanVien }, nvMoi);
@@ -70,30 +64,15 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         [HttpPut("{maNhanVien}")]
         public async Task<IActionResult> SuaNhanVien(string maNhanVien, NhanVien CapNhat)
         {
-           
-            i
-
-            if (string.IsNullOrEmpty(maNhanVien) || !maNhanVien.Trim().Equals(CapNhat.MaNhanVien?.Trim(), StringComparison.OrdinalIgnoreCase))
-            {
-                return BadRequest("Mã nhân viên không khớp.");
-            }
-
             var nhanVienHienTai = await _db.NhanViens.FindAsync(maNhanVien.Trim());
-            if (nhanVienHienTai == null)
-            {
-                return NotFound("Không tìm thấy nhân viên có mã " + maNhanVien);
-            }
+            if (nhanVienHienTai == null) return NotFound("Không tìm thấy nhân viên.");
 
             if (await _db.NhanViens.AnyAsync(n => n.SoDienThoai == CapNhat.SoDienThoai && n.MaNhanVien != maNhanVien.Trim()))
-            {
                 ModelState.AddModelError("SoDienThoai", "Số điện thoại đã tồn tại.");
-            }
 
             if (!string.IsNullOrEmpty(CapNhat.Email) &&
                 await _db.NhanViens.AnyAsync(n => n.Email == CapNhat.Email && n.MaNhanVien != maNhanVien.Trim()))
-            {
-                ModelState.AddModelError("Email", "Email đã tồn tại trong hệ thống.");
-            }
+                ModelState.AddModelError("Email", "Email đã tồn tại.");
 
             if (!ModelState.IsValid) return ValidationProblem(ModelState);
 
@@ -103,21 +82,8 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             nhanVienHienTai.ChucVu = CapNhat.ChucVu;
             nhanVienHienTai.NgayVaoLam = CapNhat.NgayVaoLam;
             nhanVienHienTai.TrangThai = CapNhat.TrangThai;
-
-            if (!string.IsNullOrEmpty(CapNhat.MatKhauHash) && CapNhat.MatKhauHash != "123")
-            {
-                nhanVienHienTai.MatKhauHash = CapNhat.MatKhauHash;
-            }
-
-            try
-            {
-                await _db.SaveChangesAsync();
-                return Ok("Cập nhật thành công.");
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, "Lỗi hệ thống: " + ex.Message);
-            }
+            await _db.SaveChangesAsync();
+            return Ok("Cập nhật thành công.");
         }
 
         [HttpDelete("{maNhanVien}")]
