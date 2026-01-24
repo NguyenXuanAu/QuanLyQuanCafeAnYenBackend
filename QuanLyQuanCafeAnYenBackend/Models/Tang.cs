@@ -16,4 +16,6 @@ public partial class Tang
     public string? ChuThich { get; set; }
 
     public virtual ICollection<Ban> Bans { get; set; } = new List<Ban>();
+
+    public virtual ICollection<HinhAnhTang> HinhAnhTangs { get; set; } = new List<HinhAnhTang>();
 }
