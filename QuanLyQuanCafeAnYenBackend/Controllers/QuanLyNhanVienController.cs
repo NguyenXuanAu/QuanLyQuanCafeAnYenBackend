@@ -6,11 +6,11 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class QL_NhanVienController : Controller
+    public class QuanLyNhanVienController : Controller
     {
         private readonly QuanLyQuanCafeDbContext _db;
 
-        public QL_NhanVienController(QuanLyQuanCafeDbContext context)
+        public QuanLyNhanVienController(QuanLyQuanCafeDbContext context)
         {
             _db = context;
         }
@@ -45,7 +45,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         [HttpPost]
         public async Task<ActionResult<NhanVien>> ThemNhanVien(NhanVien nvMoi)
         {
-            var danhSachLoi = new Dictionary<string, string[]>();
 
             if (_db.NhanViens.Any(n => n.MaNhanVien == nvMoi.MaNhanVien))
             {
@@ -62,8 +61,7 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 return BadRequest(new { errors = new { Email = new[] { "Email này đã tồn tại" } } });
             }
 
-            if (danhSachLoi.Count > 0)
-                return BadRequest(new { errors = danhSachLoi });
+          
             _db.NhanViens.Add(nvMoi);
             await _db.SaveChangesAsync();
             return CreatedAtAction("ChiTietNhanVien", new { maNhanVien = nvMoi.MaNhanVien }, nvMoi);
@@ -72,9 +70,8 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         [HttpPut("{maNhanVien}")]
         public async Task<IActionResult> SuaNhanVien(string maNhanVien, NhanVien CapNhat)
         {
-            var danhSachLoi = new Dictionary<string, string[]>();
-            if (danhSachLoi.Count > 0)
-                return BadRequest(new { errors = danhSachLoi });
+           
+            i
 
             if (string.IsNullOrEmpty(maNhanVien) || !maNhanVien.Trim().Equals(CapNhat.MaNhanVien?.Trim(), StringComparison.OrdinalIgnoreCase))
             {
