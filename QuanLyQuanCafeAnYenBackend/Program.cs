@@ -1,21 +1,55 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using QuanLyQuanCafeAnYenBackend.Models;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// 1. Cấu hình kết nối Database
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+builder.Services.AddDbContext<QuanLyQuanCafeDbContext>(options =>
+    options.UseSqlServer(connectionString));
+
+// 2. Cấu hình JWT Settings - Dùng đúng tên JWTSetting trong Models
+builder.Services.Configure<JWTSetting>(builder.Configuration.GetSection("AppSettings"));
+
+// Lấy SecretKey từ file appsettings.json
+var secretKey = builder.Configuration["AppSettings:SecretKey"];
+var secretKeyBytes = Encoding.UTF8.GetBytes(secretKey ?? "");
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(secretKeyBytes),
+            ClockSkew = TimeSpan.Zero
+        };
+    });
+builder.Services.AddMemoryCache();
+// 3. Cấu hình CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowVue",
+        policy =>
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        });
+});
 
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-//Kết nối với database SQL Server
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection"); builder.Services.AddDbContext<QuanLyQuanCafeDbContext>(options => options.UseSqlServer(connectionString));
-
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// 4. Thứ tự Middleware
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -23,9 +57,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
+app.UseCors("AllowVue");
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-
 app.Run();
