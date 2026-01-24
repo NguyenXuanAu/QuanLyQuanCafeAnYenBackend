@@ -25,8 +25,6 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 //Kết nối với database SQL Server
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-builder.Services.AddDbContext<QuanLyQuanCafeDbContext>(options => options.UseSqlServer(connectionString));
 //Cấp quyền API
 builder.Services.AddCors(options => {
     options.AddPolicy("AllowVueApp",
