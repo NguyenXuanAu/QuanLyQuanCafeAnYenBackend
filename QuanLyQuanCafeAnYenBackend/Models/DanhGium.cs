@@ -17,6 +17,8 @@ public partial class DanhGium
 
     public string? MaNguoiDung { get; set; }
 
+    public virtual ICollection<HinhAnhDanhGium> HinhAnhDanhGia { get; set; } = new List<HinhAnhDanhGium>();
+
     public virtual HoaDon MaHoaDonNavigation { get; set; } = null!;
 
     public virtual NguoiDung? MaNguoiDungNavigation { get; set; }
