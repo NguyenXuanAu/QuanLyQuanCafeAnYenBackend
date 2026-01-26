@@ -3,19 +3,41 @@ using QuanLyQuanCafeAnYenBackend.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// =======================
+// Add services
+// =======================
 
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+
+// Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-//Kết nối với database SQL Server
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection"); builder.Services.AddDbContext<QuanLyQuanCafeDbContext>(options => options.UseSqlServer(connectionString));
+// CORS (BẮT BUỘC CHO VUE)
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll",
+        policy =>
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+        });
+});
+
+// Database
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+builder.Services.AddDbContext<QuanLyQuanCafeDbContext>(options =>
+    options.UseSqlServer(connectionString));
+
+
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// =======================
+// HTTP pipeline
+// =======================
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -23,6 +45,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseCors("AllowAll"); // ⚠️ PHẢI đặt trước Authorization
 
 app.UseAuthorization();
 
