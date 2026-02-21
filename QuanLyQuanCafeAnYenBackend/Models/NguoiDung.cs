@@ -1,10 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace QuanLyQuanCafeAnYenBackend.Models;
 
 public partial class NguoiDung
 {
+    [Key]
+    [Column(TypeName = "char(10)")]
     public string MaNguoiDung { get; set; } = null!;
 
     public string HoTen { get; set; } = null!;

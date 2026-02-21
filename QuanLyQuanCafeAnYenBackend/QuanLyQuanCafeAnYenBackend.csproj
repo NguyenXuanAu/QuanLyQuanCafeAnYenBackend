@@ -16,7 +16,6 @@
   </ItemGroup>
 
 <ItemGroup>
-    <Folder Include="Models\" />
     <Folder Include="wwwroot\images\tang\tang4\" />
     <Folder Include="wwwroot\images\tang\tang3\" />
     <Folder Include="wwwroot\images\tang\tang2\" />
