@@ -1,6 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using QuanLyQuanCafeAnYenBackend.Models;
-
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services
@@ -20,6 +19,18 @@ builder.Services.AddCors(options =>
     {
         policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
     });
+});
+//Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+//Kết nối với database SQL Server
+//Cấp quyền API
+builder.Services.AddCors(options => {
+    options.AddPolicy("AllowVueApp",
+        policy => policy.AllowAnyOrigin() // Thử cho phép tất cả để test trước
+                        .AllowAnyMethod()
+                        .AllowAnyHeader());
 });
 
 var app = builder.Build();
@@ -75,12 +86,13 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-
-// CRITICAL: UseStaticFiles PHẢI đặt trước UseCors và UseAuthorization
-app.UseStaticFiles(); // Cho phép truy cập file tĩnh trong wwwroot
-
-app.UseCors("AllowVueApp");
 app.UseHttpsRedirection();
+app.UseCors("AllowVueApp");
+
+
+app.UseCors("AllowVue");
+
+
 app.UseAuthorization();
 app.MapControllers();
 
