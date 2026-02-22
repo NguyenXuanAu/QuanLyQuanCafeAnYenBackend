@@ -29,6 +29,8 @@ public partial class Ban
 
     public virtual ICollection<DonHang> DonHangs { get; set; } = new List<DonHang>();
 
+    public virtual ICollection<HinhAnhBan> HinhAnhBans { get; set; } = new List<HinhAnhBan>();
+
     public virtual ICollection<HoaDon> HoaDons { get; set; } = new List<HoaDon>();
 
     public virtual Tang MaTangNavigation { get; set; } = null!;

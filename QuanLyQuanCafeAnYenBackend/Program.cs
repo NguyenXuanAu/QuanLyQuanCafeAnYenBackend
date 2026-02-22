@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using QuanLyQuanCafeAnYenBackend.Controllers;
@@ -7,15 +7,14 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Cấu hình kết nối Database
+// 1. Kết nối Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<QuanLyQuanCafeDbContext>(options =>
     options.UseSqlServer(connectionString));
 
-// 2. Cấu hình JWT Settings - Dùng đúng tên JWTSetting trong Models
+// 2. JWT Settings
 builder.Services.Configure<JWTSetting>(builder.Configuration.GetSection("AppSettings"));
 
-// Lấy SecretKey từ file appsettings.json
 var secretKey = builder.Configuration["AppSettings:SecretKey"];
 var secretKeyBytes = Encoding.UTF8.GetBytes(secretKey ?? "");
 
@@ -31,17 +30,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ClockSkew = TimeSpan.Zero
         };
     });
+
 builder.Services.AddMemoryCache();
-// 3. Cấu hình CORS
+
+// 3. CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowVue",
-        policy =>
-        {
-            policy.AllowAnyOrigin()
-                  .AllowAnyMethod()
-                  .AllowAnyHeader();
-        });
+    options.AddPolicy("AllowVue", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
 });
 
 builder.Services.AddControllers();
@@ -50,7 +50,34 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// 4. Thứ tự Middleware
+// 4. Tạo thư mục wwwroot/images nếu chưa có
+var webRootPath = app.Environment.WebRootPath;
+
+if (string.IsNullOrEmpty(webRootPath))
+{
+    var currentDir = Directory.GetCurrentDirectory();
+    webRootPath = currentDir.Contains("bin")
+        ? Path.Combine(Directory.GetParent(currentDir)?.Parent?.Parent?.FullName ?? currentDir, "wwwroot")
+        : Path.Combine(currentDir, "wwwroot");
+
+    app.Environment.WebRootPath = webRootPath;
+}
+
+if (!Directory.Exists(webRootPath))
+    Directory.CreateDirectory(webRootPath);
+
+var imagesPath = Path.Combine(webRootPath, "images");
+if (!Directory.Exists(imagesPath))
+    Directory.CreateDirectory(imagesPath);
+
+foreach (var folder in new[] { "tang", "ban", "monan", "danhmuc" })
+{
+    var folderPath = Path.Combine(imagesPath, folder);
+    if (!Directory.Exists(folderPath))
+        Directory.CreateDirectory(folderPath);
+}
+
+// 5. Middleware pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -62,6 +89,6 @@ app.UseCors("AllowVue");
 app.UseAuthentication();
 app.UseMiddleware<SecurityStampMiddleware>();
 app.UseAuthorization();
-
 app.MapControllers();
+
 app.Run();
