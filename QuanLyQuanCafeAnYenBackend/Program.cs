@@ -1,7 +1,8 @@
-﻿using Microsoft.EntityFrameworkCore;
-using QuanLyQuanCafeAnYenBackend.Models;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using QuanLyQuanCafeAnYenBackend.Controllers;
+using QuanLyQuanCafeAnYenBackend.Models;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -59,6 +60,7 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseCors("AllowVue");
 app.UseAuthentication();
+app.UseMiddleware<SecurityStampMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();

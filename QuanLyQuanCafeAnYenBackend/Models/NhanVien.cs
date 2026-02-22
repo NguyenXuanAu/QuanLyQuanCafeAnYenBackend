@@ -20,7 +20,7 @@ public partial class NhanVien
     public bool? TrangThai { get; set; }
 
     public DateOnly? NgayVaoLam { get; set; }
-
+    public string? SecurityStamp { get; set; }
     public decimal? LuongCoBan { get; set; }
 
     public string? ChuThich { get; set; }

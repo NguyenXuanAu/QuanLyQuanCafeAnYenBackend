@@ -22,17 +22,13 @@ namespace QuanLyQuanCafeAnYenBackend.DTOs
 
         public string Age { get; set; } = "adult";
     }
-
-    // 2. DTO Đăng nhập (Dùng chung cho cả SĐT và Email)
     public class LoginDto
     {
         [Required(ErrorMessage = "Vui lòng nhập Số điện thoại hoặc Email")]
-        public string Phone { get; set; } = string.Empty; // Biến này sẽ nhận cả hai giá trị
+        public string Phone { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Mật khẩu không được để trống")]
         public string Password { get; set; } = string.Empty;
     }
-
-    // 3. DTO Đặt lại mật khẩu (Dùng Email để nhớ tài khoản như bạn yêu cầu)
     
 }
