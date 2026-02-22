@@ -36,7 +36,7 @@ public partial class NhanVien
 
     [DataType(DataType.Date)]
     public DateOnly? NgayVaoLam { get; set; }
-
+    public string? SecurityStamp { get; set; }
     public decimal? LuongCoBan { get; set; }
 
     public string? ChuThich { get; set; }
