@@ -5,7 +5,7 @@ namespace QuanLyQuanCafeAnYenBackend.Models;
 
 public partial class DonDatBan
 {
-    public string MaDonDat { get; set; } = null!;
+    public string? MaDonDat { get; set; } = null!;
 
     public Guid? MaQr { get; set; }
 
@@ -41,7 +41,7 @@ public partial class DonDatBan
 
     public virtual ICollection<HoaDon> HoaDons { get; set; } = new List<HoaDon>();
 
-    public virtual Ban MaBanNavigation { get; set; } = null!;
+    public virtual Ban? MaBanNavigation { get; set; } = null!;
 
     public virtual NguoiDung? MaNguoiDungNavigation { get; set; }
 
