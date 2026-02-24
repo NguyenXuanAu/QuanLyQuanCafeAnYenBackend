@@ -4,8 +4,8 @@ using QuanLyQuanCafeAnYenBackend.Models;
 
 namespace QuanLyQuanCafeAnYenBackend.Controllers
 {
-    [ApiController]
     [Route("api/[controller]")]
+    [ApiController]
     public class DanhMucController : ControllerBase
     {
         private readonly QuanLyQuanCafeDbContext _context;
@@ -14,12 +14,9 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         {
             _context = context;
         }
-
-        // =======================
         // GET: api/DanhMuc
-        // =======================
         [HttpGet]
-        public async Task<IActionResult> GetAll()
+        public async Task<IActionResult> GetDanhMuc()
         {
             var data = await _context.DanhMucs
                 .OrderBy(x => x.ThuTuHienThi)
@@ -29,4 +26,3 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         }
     }
 }
-    
