@@ -7,6 +7,7 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+
 // 1. Kết nối Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<QuanLyQuanCafeDbContext>(options =>
@@ -78,6 +79,7 @@ foreach (var folder in new[] { "tang", "ban", "monan", "danhmuc" })
 }
 
 // 5. Middleware pipeline
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -88,6 +90,7 @@ app.UseHttpsRedirection();
 app.UseCors("AllowVue");
 app.UseAuthentication();
 app.UseMiddleware<SecurityStampMiddleware>();
+
 app.UseAuthorization();
 app.MapControllers();
 
