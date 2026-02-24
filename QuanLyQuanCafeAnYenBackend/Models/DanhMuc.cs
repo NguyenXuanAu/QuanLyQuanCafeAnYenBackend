@@ -13,5 +13,7 @@ public partial class DanhMuc
 
     public string? ChuThich { get; set; }
 
+    public virtual ICollection<HinhAnhDanhMuc> HinhAnhDanhMucs { get; set; } = new List<HinhAnhDanhMuc>();
+
     public virtual ICollection<MonAn> MonAns { get; set; } = new List<MonAn>();
 }
