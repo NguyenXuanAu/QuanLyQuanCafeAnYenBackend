@@ -19,7 +19,7 @@ public partial class MuonThietBi
 
     public string? MaNhanVienChoMuon { get; set; }
 
-    public virtual Ban MaBanNavigation { get; set; } = null!;
+    public virtual Ban? MaBanNavigation { get; set; }
 
     public virtual NhanVien? MaNhanVienChoMuonNavigation { get; set; }
 }

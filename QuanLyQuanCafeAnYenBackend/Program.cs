@@ -1,74 +1,84 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using QuanLyQuanCafeAnYenBackend.Controllers;
 using QuanLyQuanCafeAnYenBackend.Models;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services
-builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
 
-// DB Context
+// 1. Kết nối Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<QuanLyQuanCafeDbContext>(options =>
     options.UseSqlServer(connectionString));
 
-// CORS
+// 2. JWT Settings
+builder.Services.Configure<JWTSetting>(builder.Configuration.GetSection("AppSettings"));
+
+var secretKey = builder.Configuration["AppSettings:SecretKey"];
+var secretKeyBytes = Encoding.UTF8.GetBytes(secretKey ?? "");
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(secretKeyBytes),
+            ClockSkew = TimeSpan.Zero
+        };
+    });
+
+builder.Services.AddMemoryCache();
+
+// 3. CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowVueApp", policy =>
+    options.AddPolicy("AllowVue", policy =>
     {
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
     });
 });
 
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
 var app = builder.Build();
 
+// 4. Tạo thư mục wwwroot/images nếu chưa có
 var webRootPath = app.Environment.WebRootPath;
-
 
 if (string.IsNullOrEmpty(webRootPath))
 {
     var currentDir = Directory.GetCurrentDirectory();
+    webRootPath = currentDir.Contains("bin")
+        ? Path.Combine(Directory.GetParent(currentDir)?.Parent?.Parent?.FullName ?? currentDir, "wwwroot")
+        : Path.Combine(currentDir, "wwwroot");
 
-    if (currentDir.Contains("bin"))
-    {
-        var projectRoot = Directory.GetParent(currentDir)?.Parent?.Parent?.FullName;
-
-        if (projectRoot != null && Directory.Exists(projectRoot))
-        {
-            webRootPath = Path.Combine(projectRoot, "wwwroot");
-        }
-        else
-        {
-            webRootPath = Path.Combine(currentDir, "wwwroot");
-        }
-    }
-    else
-    {
-        webRootPath = Path.Combine(currentDir, "wwwroot");
-    }
     app.Environment.WebRootPath = webRootPath;
 }
 
 if (!Directory.Exists(webRootPath))
-{
     Directory.CreateDirectory(webRootPath);
-}
+
 var imagesPath = Path.Combine(webRootPath, "images");
 if (!Directory.Exists(imagesPath))
-{
     Directory.CreateDirectory(imagesPath);
-}
-var subFolders = new[] { "tang", "ban", "monan", "danhmuc" };
-foreach (var folder in subFolders)
+
+foreach (var folder in new[] { "tang", "ban", "monan", "danhmuc" })
 {
     var folderPath = Path.Combine(imagesPath, folder);
     if (!Directory.Exists(folderPath))
-    {
         Directory.CreateDirectory(folderPath);
-    }
 }
+
+// 5. Middleware pipeline
 
 if (app.Environment.IsDevelopment())
 {
@@ -76,13 +86,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// CRITICAL: UseStaticFiles PHẢI đặt trước UseCors và UseAuthorization
-app.UseStaticFiles(); // Cho phép truy cập file tĩnh trong wwwroot
-
-app.UseCors("AllowVueApp");
 app.UseHttpsRedirection();
+app.UseCors("AllowVue");
+app.UseAuthentication();
+app.UseMiddleware<SecurityStampMiddleware>();
+
 app.UseAuthorization();
 app.MapControllers();
-
 
 app.Run();
