@@ -60,8 +60,7 @@ public partial class QuanLyQuanCafeDbContext : DbContext
     public virtual DbSet<YeuCauNhac> YeuCauNhacs { get; set; }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-#warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
-        => optionsBuilder.UseSqlServer("Data Source=DESKTOP-SCAPGLL;Initial Catalog=QuanLyQuanCafeDb;Integrated Security=True;Encrypt=True;Trust Server Certificate=True");
+        => optionsBuilder.UseSqlServer("Data Source=YKHIENBLO\\SQLEXPRESS01;Initial Catalog=QuanLyQuanCafeDb;Integrated Security=True;Encrypt=True;Trust Server Certificate=True");
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -181,11 +180,11 @@ public partial class QuanLyQuanCafeDbContext : DbContext
                 .IsFixedLength();
             entity.Property(e => e.ThanhTien).HasColumnType("decimal(18, 2)");
 
-            entity.HasOne(d => d.MaHoaDonNavigation).WithMany(p => p.ChiTietHoaDons)
+            entity.HasOne(d => d.HoaDon).WithMany(p => p.ChiTietHoaDons)
                 .HasForeignKey(d => d.MaHoaDon)
                 .HasConstraintName("FK__ChiTietHo__MaHoa__09A971A2");
 
-            entity.HasOne(d => d.MaMonAnNavigation).WithMany(p => p.ChiTietHoaDons)
+            entity.HasOne(d => d.MonAn).WithMany(p => p.ChiTietHoaDons)
                 .HasForeignKey(d => d.MaMonAn)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK__ChiTietHo__MaMon__0A9D95DB");
