@@ -208,11 +208,11 @@ public partial class QuanLyQuanCafeDbContext : DbContext
                 .IsFixedLength();
             entity.Property(e => e.ThanhTien).HasColumnType("decimal(18, 2)");
 
-            entity.HasOne(d => d.MaHoaDonNavigation).WithMany(p => p.ChiTietHoaDons)
+            entity.HasOne(d => d.HoaDon).WithMany(p => p.ChiTietHoaDons)
                 .HasForeignKey(d => d.MaHoaDon)
                 .HasConstraintName("FK__ChiTietHo__MaHoa__09A971A2");
 
-            entity.HasOne(d => d.MaMonAnNavigation).WithMany(p => p.ChiTietHoaDons)
+            entity.HasOne(d => d.MonAn).WithMany(p => p.ChiTietHoaDons)
                 .HasForeignKey(d => d.MaMonAn)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK__ChiTietHo__MaMon__0A9D95DB");
