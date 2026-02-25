@@ -122,14 +122,12 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             string hashedInput = SimpleHash(model.Password);
             string phone = model.Phone.Trim();
 
-            // 1. Kiểm tra ở bảng Người Dùng (Khách hàng)
             var user = await _context.NguoiDungs
                 .FirstOrDefaultAsync(u => (u.SoDienThoai.Trim() == phone || u.Email.Trim() == phone)
                                      && u.MatKhauHash == hashedInput);
 
             if (user != null)
             {
-                // Nếu là Admin/Nhân viên nhưng đăng nhập ở bảng Người dùng
                 if (user.VaiTro == 1)
                 {
                     return Ok(new { Success = true, IsAdminAccount = true, Username = phone });
@@ -143,31 +141,43 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 });
             }
 
-            // 2. Nếu không thấy ở bảng Người dùng, kiểm tra tiếp bảng Nhân Viên
             var staff = await _context.NhanViens
                 .FirstOrDefaultAsync(s => (s.SoDienThoai.Trim() == phone || s.Email.Trim() == phone || s.MaNhanVien.Trim() == phone)
                                      && s.MatKhauHash == hashedInput);
 
             if (staff != null)
             {
-                // Nếu tìm thấy ở bảng nhân viên, yêu cầu chuyển sang cổng Admin
                 return Ok(new { Success = true, IsAdminAccount = true, Username = phone });
             }
 
             return Unauthorized(new { Success = false, Message = "Tài khoản hoặc mật khẩu không chính xác" });
         }
 
-        // --- HÀM QUÊN MẬT KHẨU TÍCH HỢP 2 BẢNG ---
         [HttpPost("Forgotpassword")]
         public async Task<IActionResult> ForgotPassword([FromBody] string account)
         {
-            // 1. Kiểm tra ở bảng Người dùng
-            var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.SoDienThoai == account || u.Email == account);
+            // 1. Làm sạch dữ liệu trước
+            string cleanAccount = account?.Replace("\"", "").Trim().ToLower() ?? "";
 
-            // 2. Kiểm tra ở bảng Nhân viên nếu không thấy người dùng
-            var staff = (user == null) ? await _context.NhanViens.FirstOrDefaultAsync(s => s.SoDienThoai == account || s.Email == account || s.MaNhanVien == account) : null;
+            if (string.IsNullOrEmpty(cleanAccount))
+                return BadRequest(new { Message = "Thông tin tài khoản không được để trống" });
 
-            var targetEmail = user?.Email ?? staff?.Email;
+            // 2. KIỂM TRA ĐỊNH DẠNG EMAIL THỦ CÔNG (Vì đã bỏ ở DTO)
+            // Nếu account chứa ký tự '@' thì mới kiểm tra định dạng Email
+            if (cleanAccount.Contains("@"))
+            {
+                var emailChecker = new System.ComponentModel.DataAnnotations.EmailAddressAttribute();
+                if (!emailChecker.IsValid(cleanAccount))
+                {
+                    return BadRequest(new { Message = "Định dạng Email không hợp lệ!" });
+                }
+            }
+
+            // 3. Truy vấn dữ liệu như cũ
+            var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.SoDienThoai == cleanAccount || u.Email == cleanAccount);
+            var staff = (user == null) ? await _context.NhanViens.FirstOrDefaultAsync(s => s.SoDienThoai == cleanAccount || s.Email == cleanAccount || s.MaNhanVien == cleanAccount) : null;
+
+            var targetEmail = (user?.Email ?? staff?.Email)?.ToLower().Trim();
             var targetName = user?.HoTen ?? staff?.HoTen;
 
             if (string.IsNullOrEmpty(targetEmail))
@@ -175,6 +185,7 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 return NotFound(new { Message = "Không tìm thấy tài khoản liên kết với thông tin này" });
             }
 
+            // ... phần sinh OTP và gửi Mail giữ nguyên ...
             string otp = new Random().Next(100000, 999999).ToString();
             _cache.Set(targetEmail, otp, TimeSpan.FromMinutes(5));
 
@@ -193,14 +204,16 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         [HttpPost("ResetPassword")]
         public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto model)
         {
-            if (!_cache.TryGetValue(model.Email, out string savedOtp) || savedOtp != model.Otp)
+            // BƯỚC SỬA: Làm sạch Email nhận được từ Frontend để so khớp với Cache
+            string cleanEmail = model.Email?.Replace("\"", "").Trim().ToLower() ?? "";
+
+            if (!_cache.TryGetValue(cleanEmail, out string savedOtp) || savedOtp != model.Otp?.Trim())
             {
                 return BadRequest(new { Message = "Mã OTP không chính xác hoặc đã hết hạn" });
             }
 
-            // Tìm ở cả 2 bảng để cập nhật
-            var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.Email == model.Email);
-            var staff = await _context.NhanViens.FirstOrDefaultAsync(s => s.Email == model.Email);
+            var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.Email == cleanEmail);
+            var staff = await _context.NhanViens.FirstOrDefaultAsync(s => s.Email == cleanEmail);
 
             if (user == null && staff == null) return NotFound();
 
@@ -210,7 +223,7 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             if (staff != null) staff.MatKhauHash = hashedPass;
 
             await _context.SaveChangesAsync();
-            _cache.Remove(model.Email);
+            _cache.Remove(cleanEmail);
             return Ok(new { Success = true, Message = "Đặt lại mật khẩu thành công!" });
         }
 
@@ -236,5 +249,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             mailMessage.To.Add(toEmail);
             await smtpClient.SendMailAsync(mailMessage);
         }
+
     }
 }
