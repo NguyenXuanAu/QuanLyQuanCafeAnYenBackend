@@ -19,6 +19,9 @@ public partial class ChiTietHoaDon
 
     public string MaMonAn { get; set; } = null!;
 
+    public virtual MonAn MonAn { get; set; }
+    public virtual HoaDon HoaDon { get; set; }
+
     public virtual HoaDon MaHoaDonNavigation { get; set; } = null!;
 
     public virtual MonAn MaMonAnNavigation { get; set; } = null!;
