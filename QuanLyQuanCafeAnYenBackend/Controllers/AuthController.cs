@@ -32,7 +32,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             _cache = cache;
         }
 
-        // THÊM: Kiểm tra Token cho khách hàng tương tự Admin
         [Authorize]
         [HttpGet("CheckToken")]
         public IActionResult CheckToken()
@@ -52,8 +51,8 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                     new Claim("UserId", user.MaNguoiDung.Trim()),
                     new Claim("FullName", user.HoTen),
                     new Claim(ClaimTypes.Role, user.VaiTro == 1 ? "Admin" : "User"),
-                    new Claim("Type", "Customer"), // Để phân biệt với "Staff"
-                    new Claim("SecurityStamp", user.SecurityStamp ?? "") // Thêm Stamp vào Token
+                    new Claim("Type", "Customer"),
+                    new Claim("SecurityStamp", user.SecurityStamp ?? "")
                 }),
                 Expires = DateTime.UtcNow.AddDays(7),
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
@@ -82,14 +81,13 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             string hashedInput = SimpleHash(model.Password);
             string phone = model.Phone.Trim();
 
-            // 1. Kiểm tra Người dùng
+            // SỬA: Tìm kiếm người dùng khớp cả SĐT/Email VÀ Mật khẩu ngay từ đầu
             var user = await _context.NguoiDungs
                 .FirstOrDefaultAsync(u => (u.SoDienThoai.Trim() == phone || u.Email.Trim() == phone)
                                      && u.MatKhauHash == hashedInput);
 
             if (user != null)
             {
-                // Tự động sinh mã bảo mật nếu chưa có
                 if (string.IsNullOrEmpty(user.SecurityStamp))
                 {
                     user.SecurityStamp = Guid.NewGuid().ToString();
@@ -105,20 +103,21 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 });
             }
 
-            // 2. Kiểm tra nếu là Nhân viên thì báo chuyển trang
+            // SỬA: Kiểm tra nhân viên khớp cả thông tin VÀ Mật khẩu
             var staff = await _context.NhanViens
                 .FirstOrDefaultAsync(s => (s.SoDienThoai.Trim() == phone || s.Email.Trim() == phone || s.MaNhanVien.Trim() == phone)
                                      && s.MatKhauHash == hashedInput);
 
             if (staff != null)
             {
+                // Trả về IsAdminAccount = true để Frontend biết và chuyển hướng sang trang Login Admin
                 return Ok(new { Success = true, IsAdminAccount = true, Message = "Tài khoản nhân viên, vui lòng qua cổng Admin" });
             }
 
+            // TRẢ VỀ: Chỉ báo lỗi sai tài khoản/mật khẩu chung cho mọi trường hợp nhập sai thông tin
             return Unauthorized(new { Success = false, Message = "Tài khoản hoặc mật khẩu không chính xác" });
         }
 
-        // THÊM: Đăng xuất tất cả thiết bị cho khách hàng
         [HttpPost("LogoutAllDevices")]
         public async Task<IActionResult> LogoutAllDevices([FromBody] string userId)
         {
@@ -137,17 +136,13 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         [HttpPost("Forgotpassword")]
         public async Task<IActionResult> ForgotPassword([FromBody] string account)
         {
-            // 1. Làm sạch dữ liệu đầu vào
             string cleanAccount = account?.Replace("\"", "").Trim().ToLower() ?? "";
-
             if (string.IsNullOrEmpty(cleanAccount))
                 return BadRequest(new { Message = "Thông tin tài khoản không được để trống" });
 
-            // 2. Tìm kiếm ở cả 2 bảng: Người dùng và Nhân viên
             var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.SoDienThoai == cleanAccount || u.Email == cleanAccount);
             var staff = (user == null) ? await _context.NhanViens.FirstOrDefaultAsync(s => s.SoDienThoai == cleanAccount || s.Email == cleanAccount || s.MaNhanVien == cleanAccount) : null;
 
-            // 3. Xác định Email và Tên người nhận
             var targetEmail = (user?.Email ?? staff?.Email)?.ToLower().Trim();
             var targetName = user?.HoTen ?? staff?.HoTen;
 
@@ -156,7 +151,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 return NotFound(new { Message = "Không tìm thấy tài khoản liên kết với thông tin này" });
             }
 
-            // 4. Sinh mã OTP dùng chung một Prefix Global
             string otp = new Random().Next(100000, 999999).ToString();
             _cache.Set($"GlobalOTP_{targetEmail}", otp, TimeSpan.FromMinutes(5));
 
@@ -178,7 +172,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         {
             string cleanEmail = model.Email?.Replace("\"", "").Trim().ToLower() ?? "";
 
-            // Kiểm tra OTP từ bộ nhớ đệm dùng chung
             if (!_cache.TryGetValue($"GlobalOTP_{cleanEmail}", out string savedOtp) || savedOtp != model.Otp?.Trim())
             {
                 return BadRequest(new { Message = "Mã OTP không chính xác hoặc đã hết hạn" });
@@ -190,7 +183,7 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             if (user == null && staff == null) return NotFound();
 
             string hashedPass = SimpleHash(model.NewPassword);
-            string newStamp = Guid.NewGuid().ToString(); // Tạo Stamp mới để vô hiệu hóa Token cũ
+            string newStamp = Guid.NewGuid().ToString();
 
             if (user != null)
             {
@@ -204,10 +197,11 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             }
 
             await _context.SaveChangesAsync();
-            _cache.Remove($"GlobalOTP_{cleanEmail}");
+            _cache.Set($"GlobalOTP_{cleanEmail}", "EXPIRED", TimeSpan.FromSeconds(1));
 
             return Ok(new { Success = true, Message = "Đặt lại mật khẩu thành công!" });
         }
+
         private async Task SendEmailAsync(string toEmail, string subject, string body)
         {
             var fromEmail = _config["MailSettings:Mail"];

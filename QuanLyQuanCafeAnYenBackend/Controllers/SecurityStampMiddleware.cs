@@ -15,16 +15,29 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
 
         public async Task InvokeAsync(HttpContext context, QuanLyQuanCafeDbContext dbContext)
         {
+            var path = context.Request.Path.Value?.ToLower();
+
+            // SỬA: Bổ qua kiểm tra Stamp cho tất cả các route đăng nhập (Khách và Nhân viên)
+            // Thêm các path liên quan đến Admin Login và AuthStaff để tránh hiện Pop-up sai khi nhập lỗi mật khẩu
+            if (path != null && (
+                path.Contains("/login") ||
+                path.Contains("/forgotpassword") ||
+                path.Contains("/api/auth/login") ||
+                path.Contains("/api/authstaff/login")
+            ))
+            {
+                await _next(context);
+                return;
+            }
+
             var userPrincipal = context.User;
             if (userPrincipal.Identity?.IsAuthenticated == true)
             {
-                // 1. Lấy mã định danh và dấu vân tay bảo mật từ Token
                 var stampFromToken = userPrincipal.FindFirst("SecurityStamp")?.Value;
-                var type = userPrincipal.FindFirst("Type")?.Value; // Để biết là Customer hay Staff
+                var type = userPrincipal.FindFirst("Type")?.Value;
 
                 bool isInvalid = false;
 
-                // 2. Xử lý cho KHÁCH HÀNG (Dựa trên UserId)
                 if (type == "Customer")
                 {
                     var userId = userPrincipal.FindFirst("UserId")?.Value;
@@ -37,7 +50,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                         isInvalid = true;
                     }
                 }
-                // 3. Xử lý cho NHÂN VIÊN (Dựa trên StaffId)
                 else if (type == "Staff")
                 {
                     var staffId = userPrincipal.FindFirst("StaffId")?.Value;
@@ -51,7 +63,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                     }
                 }
 
-                // 4. Nếu Token không còn khớp với Database -> Chặn đứng ngay
                 if (isInvalid)
                 {
                     context.Response.StatusCode = 401;
@@ -59,7 +70,7 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                     await context.Response.WriteAsJsonAsync(new
                     {
                         success = false,
-                        message = "Phiên làm việc hết hạn hoặc bạn đã đăng xuất từ thiết bị khác!"
+                        message = "Tài khoản của bạn đã được đăng nhập ở nơi khác hoặc vừa đổi mật khẩu. Vui lòng đăng nhập lại."
                     });
                     return;
                 }
