@@ -134,13 +134,20 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 {
                     return Ok(new { Success = true, IsAdminAccount = true, Username = phone });
                 }
-
                 return Ok(new
                 {
                     Success = true,
                     Token = GenerateJwtToken(user),
-                    User = new { user.HoTen, user.Email }
+                    // 👉 FIX BUG: Trả thêm MaNguoiDung và SoDienThoai về cho Frontend
+                    User = new { user.MaNguoiDung, user.HoTen, user.SoDienThoai, user.Email }
                 });
+                //Hoang sửa
+                //return Ok(new
+                //{
+                //    Success = true,
+                //    Token = GenerateJwtToken(user),
+                //    User = new { user.HoTen, user.Email }
+                //});
             }
 
             // 2. Nếu không thấy ở bảng Người dùng, kiểm tra tiếp bảng Nhân Viên
