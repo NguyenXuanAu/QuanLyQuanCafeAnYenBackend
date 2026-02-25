@@ -8,7 +8,6 @@ namespace QuanLyQuanCafeAnYenBackend.DTOs
         public string Email { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Vui lòng nhập mã OTP")]
-
         public string Otp { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Mật khẩu mới không được để trống")]

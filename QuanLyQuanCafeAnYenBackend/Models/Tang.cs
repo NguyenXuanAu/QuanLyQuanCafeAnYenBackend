@@ -18,4 +18,6 @@ public partial class Tang
     public virtual ICollection<Ban> Bans { get; set; } = new List<Ban>();
 
     public virtual ICollection<HinhAnhTang> HinhAnhTangs { get; set; } = new List<HinhAnhTang>();
+
+    public virtual ICollection<LichPhatNhac> LichPhatNhacs { get; set; } = new List<LichPhatNhac>();
 }

@@ -5,24 +5,16 @@ using System.Security.Cryptography;
 using System.Text;
 using QuanLyQuanCafeAnYenBackend.Models;
 using QuanLyQuanCafeAnYenBackend.DTOs;
-using System.Net.Mail;
-using System.Net;
-using Microsoft.Extensions.Caching.Memory;
 using System.IdentityModel.Tokens.Jwt;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
+using Microsoft.Extensions.Caching.Memory;
+using System.Net.Mail;
+using System.Net;
+using Microsoft.AspNetCore.Authorization;
 
 namespace QuanLyQuanCafeAnYenBackend.Controllers
 {
-    public class RegisterRequest
-    {
-        public string Name { get; set; } = string.Empty;
-        public string Phone { get; set; } = string.Empty;
-        public string Email { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty;
-        public string Age { get; set; } = string.Empty;
-    }
-
     [Route("api/[controller]")]
     [ApiController]
     public class AuthController : ControllerBase
@@ -40,6 +32,14 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             _cache = cache;
         }
 
+        // THÊM: Kiểm tra Token cho khách hàng tương tự Admin
+        [Authorize]
+        [HttpGet("CheckToken")]
+        public IActionResult CheckToken()
+        {
+            return Ok(new { Success = true, Message = "Token khách hàng hợp lệ." });
+        }
+
         private string GenerateJwtToken(NguoiDung user)
         {
             var jwtHandler = new JwtSecurityTokenHandler();
@@ -49,11 +49,11 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             {
                 Subject = new ClaimsIdentity(new[]
                 {
-                    new Claim("UserId", user.MaNguoiDung),
+                    new Claim("UserId", user.MaNguoiDung.Trim()),
                     new Claim("FullName", user.HoTen),
                     new Claim(ClaimTypes.Role, user.VaiTro == 1 ? "Admin" : "User"),
-                    new Claim("Hometown", "Dak Lak"),
-                    new Claim("Project", "An Yen Coffee")
+                    new Claim("Type", "Customer"), // Để phân biệt với "Staff"
+                    new Claim("SecurityStamp", user.SecurityStamp ?? "") // Thêm Stamp vào Token
                 }),
                 Expires = DateTime.UtcNow.AddDays(7),
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
@@ -76,124 +76,82 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             }
         }
 
-        [HttpPost("register")]
-        public async Task<IActionResult> Register([FromBody] RegisterRequest data)
-        {
-            if (data == null) return BadRequest(new { Message = "Dữ liệu không hợp lệ!" });
-
-            if (await _context.NguoiDungs.AnyAsync(u => u.SoDienThoai == data.Phone || u.Email == data.Email))
-            {
-                return BadRequest(new { Success = false, Message = "Số điện thoại hoặc Email đã tồn tại!" });
-            }
-
-            var lastUser = await _context.NguoiDungs
-                .Where(u => u.MaNguoiDung.StartsWith("ND"))
-                .OrderByDescending(u => u.MaNguoiDung)
-                .FirstOrDefaultAsync();
-
-            string newMaND = lastUser == null ? "ND001" : "ND" + (int.Parse(lastUser.MaNguoiDung.Substring(2)) + 1).ToString("D3");
-
-            var newUser = new NguoiDung
-            {
-                MaNguoiDung = newMaND,
-                HoTen = data.Name,
-                SoDienThoai = data.Phone,
-                Email = data.Email,
-                MatKhauHash = SimpleHash(data.Password),
-                VaiTro = 0,
-                DiemTichLuy = 0,
-                NgayTao = DateTime.Now,
-                ChuThich = data.Age
-            };
-
-            if (data.Age == "child") newUser.DoTuoi = 15;
-            else if (data.Age == "adult") newUser.DoTuoi = 25;
-            else if (data.Age == "senior") newUser.DoTuoi = 65;
-
-            _context.NguoiDungs.Add(newUser);
-            await _context.SaveChangesAsync();
-
-            return Ok(new { Success = true, Message = "Đăng ký thành công!", MaNguoiDung = newMaND });
-        }
-
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginDto model)
         {
             string hashedInput = SimpleHash(model.Password);
             string phone = model.Phone.Trim();
-
+            // 1. Kiểm tra Người dùng
             var user = await _context.NguoiDungs
                 .FirstOrDefaultAsync(u => (u.SoDienThoai.Trim() == phone || u.Email.Trim() == phone)
                                      && u.MatKhauHash == hashedInput);
 
             if (user != null)
             {
-                if (user.VaiTro == 1)
+                // Tự động sinh mã bảo mật nếu chưa có
+                if (string.IsNullOrEmpty(user.SecurityStamp))
                 {
-                    return Ok(new { Success = true, IsAdminAccount = true, Username = phone });
+                    user.SecurityStamp = Guid.NewGuid().ToString();
+                    await _context.SaveChangesAsync();
                 }
 
                 return Ok(new
                 {
                     Success = true,
+                    IsAdminAccount = false,
                     Token = GenerateJwtToken(user),
                     User = new { user.HoTen, user.Email }
                 });
             }
-
+            // 2. Kiểm tra nếu là Nhân viên thì báo chuyển trang
             var staff = await _context.NhanViens
                 .FirstOrDefaultAsync(s => (s.SoDienThoai.Trim() == phone || s.Email.Trim() == phone || s.MaNhanVien.Trim() == phone)
                                      && s.MatKhauHash == hashedInput);
 
             if (staff != null)
             {
-                return Ok(new { Success = true, IsAdminAccount = true, Username = phone });
+                return Ok(new { Success = true, IsAdminAccount = true, Message = "Tài khoản nhân viên, vui lòng qua cổng Admin" });
             }
 
             return Unauthorized(new { Success = false, Message = "Tài khoản hoặc mật khẩu không chính xác" });
+        }
+        // THÊM: Đăng xuất tất cả thiết bị cho khách hàng
+        [HttpPost("LogoutAllDevices")]
+        public async Task<IActionResult> LogoutAllDevices([FromBody] string userId)
+        {
+            string cleanId = userId.Replace("\"", "").Trim();
+            var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.MaNguoiDung.Trim() == cleanId);
+
+            if (user == null) return NotFound(new { Message = "Không tìm thấy người dùng" });
+
+            user.SecurityStamp = Guid.NewGuid().ToString();
+            _context.NguoiDungs.Update(user);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { Success = true, Message = "Đã vô hiệu hóa toàn bộ Token khách hàng cũ!" });
         }
 
         [HttpPost("Forgotpassword")]
         public async Task<IActionResult> ForgotPassword([FromBody] string account)
         {
-            // 1. Làm sạch dữ liệu trước
             string cleanAccount = account?.Replace("\"", "").Trim().ToLower() ?? "";
-
-            if (string.IsNullOrEmpty(cleanAccount))
-                return BadRequest(new { Message = "Thông tin tài khoản không được để trống" });
-
-            // 2. KIỂM TRA ĐỊNH DẠNG EMAIL THỦ CÔNG (Vì đã bỏ ở DTO)
-            // Nếu account chứa ký tự '@' thì mới kiểm tra định dạng Email
-            if (cleanAccount.Contains("@"))
-            {
-                var emailChecker = new System.ComponentModel.DataAnnotations.EmailAddressAttribute();
-                if (!emailChecker.IsValid(cleanAccount))
-                {
-                    return BadRequest(new { Message = "Định dạng Email không hợp lệ!" });
-                }
-            }
-
-            // 3. Truy vấn dữ liệu như cũ
             var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.SoDienThoai == cleanAccount || u.Email == cleanAccount);
-            var staff = (user == null) ? await _context.NhanViens.FirstOrDefaultAsync(s => s.SoDienThoai == cleanAccount || s.Email == cleanAccount || s.MaNhanVien == cleanAccount) : null;
 
-            var targetEmail = (user?.Email ?? staff?.Email)?.ToLower().Trim();
-            var targetName = user?.HoTen ?? staff?.HoTen;
-
-            if (string.IsNullOrEmpty(targetEmail))
+            if (user == null || string.IsNullOrEmpty(user.Email))
             {
-                return NotFound(new { Message = "Không tìm thấy tài khoản liên kết với thông tin này" });
+                return NotFound(new { Message = "Không tìm thấy thông tin tài khoản hoặc Email liên kết" });
             }
 
             // ... phần sinh OTP và gửi Mail giữ nguyên ...
             string otp = new Random().Next(100000, 999999).ToString();
-            _cache.Set(targetEmail, otp, TimeSpan.FromMinutes(5));
+            // PHÂN TÁCH CACHE: Dùng prefix khác với Admin
+            _cache.Set($"UserOTP_{user.Email}", otp, TimeSpan.FromMinutes(5));
 
             try
             {
-                await SendEmailAsync(targetEmail, "Mã OTP phục hồi mật khẩu - An Yên Coffee",
-                    $"<h3>Xin chào {targetName},</h3><p>Mã OTP của bạn là: <b style='color:red;'>{otp}</b></p><p>Mã có hiệu lực trong 5 phút.</p>");
-                return Ok(new { Success = true, Message = "Mã OTP đã được gửi về Email của bạn", Email = targetEmail });
+                await SendEmailAsync(user.Email, "Mã OTP phục hồi tài khoản - An Yên Coffee",
+                    $"<h3>Xin chào {user.HoTen},</h3><p>Mã OTP của bạn là: <b style='color:red;'>{otp}</b></p>");
+                return Ok(new { Success = true, Message = "Mã OTP đã gửi về Email", Email = user.Email });
             }
             catch (Exception ex)
             {
@@ -204,26 +162,20 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         [HttpPost("ResetPassword")]
         public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto model)
         {
-            // BƯỚC SỬA: Làm sạch Email nhận được từ Frontend để so khớp với Cache
-            string cleanEmail = model.Email?.Replace("\"", "").Trim().ToLower() ?? "";
-
-            if (!_cache.TryGetValue(cleanEmail, out string savedOtp) || savedOtp != model.Otp?.Trim())
+            // Kiểm tra Cache đúng prefix
+            if (!_cache.TryGetValue($"UserOTP_{model.Email}", out string savedOtp) || savedOtp != model.Otp)
             {
                 return BadRequest(new { Message = "Mã OTP không chính xác hoặc đã hết hạn" });
             }
+            var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.Email == model.Email);
+            if (user == null) return NotFound();
 
-            var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.Email == cleanEmail);
-            var staff = await _context.NhanViens.FirstOrDefaultAsync(s => s.Email == cleanEmail);
+            user.MatKhauHash = SimpleHash(model.NewPassword);
+            user.SecurityStamp = Guid.NewGuid().ToString(); // Vô hiệu hóa token cũ khi đổi pass
 
-            if (user == null && staff == null) return NotFound();
-
-            string hashedPass = SimpleHash(model.NewPassword);
-
-            if (user != null) user.MatKhauHash = hashedPass;
-            if (staff != null) staff.MatKhauHash = hashedPass;
-
+            _context.NguoiDungs.Update(user);
             await _context.SaveChangesAsync();
-            _cache.Remove(cleanEmail);
+            _cache.Remove($"UserOTP_{model.Email}");
             return Ok(new { Success = true, Message = "Đặt lại mật khẩu thành công!" });
         }
 
@@ -233,12 +185,14 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             var password = _config["MailSettings:Password"];
             var host = _config["MailSettings:Host"] ?? "smtp.gmail.com";
             var port = int.Parse(_config["MailSettings:Port"] ?? "587");
+
             var smtpClient = new SmtpClient(host)
             {
                 Port = port,
                 Credentials = new NetworkCredential(fromEmail, password),
                 EnableSsl = true,
             };
+
             var mailMessage = new MailMessage
             {
                 From = new MailAddress(fromEmail, "An Yên Coffee"),
