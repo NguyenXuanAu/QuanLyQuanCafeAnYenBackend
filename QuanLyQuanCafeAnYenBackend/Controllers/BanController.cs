@@ -4,22 +4,27 @@ using QuanLyQuanCafeAnYenBackend.Models;
 
 namespace QuanLyQuanCafeAnYenBackend.Controllers
 {
-    [Route("api/[controller]")]
     [ApiController]
-    public class DanhMucController : ControllerBase
+    [Route("api/[controller]")]
+    public class BanController : ControllerBase
     {
         private readonly QuanLyQuanCafeDbContext _context;
 
-        public DanhMucController(QuanLyQuanCafeDbContext context)
+        public BanController(QuanLyQuanCafeDbContext context)
         {
             _context = context;
         }
-        // GET: api/DanhMuc
+
+        // GET: api/Ban
         [HttpGet]
-        public async Task<IActionResult> GetDanhMuc()
+        public async Task<IActionResult> GetAll()
         {
-            var data = await _context.DanhMucs
-                .OrderBy(x => x.ThuTuHienThi)
+            var data = await _context.Bans
+                .Select(b => new
+                {
+                    b.MaBan,
+                    b.TenBan
+                })
                 .ToListAsync();
 
             return Ok(data);

@@ -1,10 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace QuanLyQuanCafeAnYenBackend.Models;
 
 public partial class LichSuDiem
 {
+    [Key]
+    [Column(TypeName = "char(10)")]
     public string MaGiaoDich { get; set; } = null!;
 
     public int LoaiGiaoDich { get; set; }
@@ -13,8 +17,10 @@ public partial class LichSuDiem
 
     public string? MoTa { get; set; }
 
-    public DateTime? ThoiGian { get; set; }
+    public DateTime ThoiGian { get; set; } = DateTime.Now;
 
+    [Required]
+    [Column(TypeName = "char(10)")]
     public string MaNguoiDung { get; set; } = null!;
 
     public string? MaHoaDon { get; set; }
