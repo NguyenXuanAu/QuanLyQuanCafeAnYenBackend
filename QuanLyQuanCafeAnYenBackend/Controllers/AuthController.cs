@@ -137,23 +137,35 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         [HttpPost("Forgotpassword")]
         public async Task<IActionResult> ForgotPassword([FromBody] string account)
         {
+            // 1. Làm sạch dữ liệu đầu vào
             string cleanAccount = account?.Replace("\"", "").Trim().ToLower() ?? "";
-            var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.SoDienThoai == cleanAccount || u.Email == cleanAccount);
 
-            if (user == null || string.IsNullOrEmpty(user.Email))
+            if (string.IsNullOrEmpty(cleanAccount))
+                return BadRequest(new { Message = "Thông tin tài khoản không được để trống" });
+
+            // 2. Tìm kiếm ở cả 2 bảng: Người dùng và Nhân viên
+            var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.SoDienThoai == cleanAccount || u.Email == cleanAccount);
+            var staff = (user == null) ? await _context.NhanViens.FirstOrDefaultAsync(s => s.SoDienThoai == cleanAccount || s.Email == cleanAccount || s.MaNhanVien == cleanAccount) : null;
+
+            // 3. Xác định Email và Tên người nhận
+            var targetEmail = (user?.Email ?? staff?.Email)?.ToLower().Trim();
+            var targetName = user?.HoTen ?? staff?.HoTen;
+
+            if (string.IsNullOrEmpty(targetEmail))
             {
-                return NotFound(new { Message = "Không tìm thấy thông tin tài khoản hoặc Email liên kết" });
+                return NotFound(new { Message = "Không tìm thấy tài khoản liên kết với thông tin này" });
             }
 
+            // 4. Sinh mã OTP dùng chung một Prefix Global
             string otp = new Random().Next(100000, 999999).ToString();
-            // PHÂN TÁCH CACHE: Dùng prefix khác với Admin
-            _cache.Set($"UserOTP_{user.Email}", otp, TimeSpan.FromMinutes(5));
+            _cache.Set($"GlobalOTP_{targetEmail}", otp, TimeSpan.FromMinutes(5));
 
             try
             {
-                await SendEmailAsync(user.Email, "Mã OTP phục hồi tài khoản - An Yên Coffee",
-                    $"<h3>Xin chào {user.HoTen},</h3><p>Mã OTP của bạn là: <b style='color:red;'>{otp}</b></p>");
-                return Ok(new { Success = true, Message = "Mã OTP đã gửi về Email", Email = user.Email });
+                await SendEmailAsync(targetEmail, "Mã OTP phục hồi mật khẩu - An Yên Coffee",
+                    $"<h3>Xin chào {targetName},</h3><p>Mã OTP của bạn là: <b style='color:red; font-size:20px;'>{otp}</b></p>");
+
+                return Ok(new { Success = true, Message = "Mã OTP đã được gửi về Email của bạn", Email = targetEmail });
             }
             catch (Exception ex)
             {
@@ -164,25 +176,38 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         [HttpPost("ResetPassword")]
         public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto model)
         {
-            // Kiểm tra Cache đúng prefix
-            if (!_cache.TryGetValue($"UserOTP_{model.Email}", out string savedOtp) || savedOtp != model.Otp)
+            string cleanEmail = model.Email?.Replace("\"", "").Trim().ToLower() ?? "";
+
+            // Kiểm tra OTP từ bộ nhớ đệm dùng chung
+            if (!_cache.TryGetValue($"GlobalOTP_{cleanEmail}", out string savedOtp) || savedOtp != model.Otp?.Trim())
             {
                 return BadRequest(new { Message = "Mã OTP không chính xác hoặc đã hết hạn" });
             }
 
-            var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.Email == model.Email);
-            if (user == null) return NotFound();
+            var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.Email == cleanEmail);
+            var staff = await _context.NhanViens.FirstOrDefaultAsync(s => s.Email == cleanEmail);
 
-            user.MatKhauHash = SimpleHash(model.NewPassword);
-            user.SecurityStamp = Guid.NewGuid().ToString(); // Vô hiệu hóa token cũ khi đổi pass
+            if (user == null && staff == null) return NotFound();
 
-            _context.NguoiDungs.Update(user);
+            string hashedPass = SimpleHash(model.NewPassword);
+            string newStamp = Guid.NewGuid().ToString(); // Tạo Stamp mới để vô hiệu hóa Token cũ
+
+            if (user != null)
+            {
+                user.MatKhauHash = hashedPass;
+                user.SecurityStamp = newStamp;
+            }
+            if (staff != null)
+            {
+                staff.MatKhauHash = hashedPass;
+                staff.SecurityStamp = newStamp;
+            }
+
             await _context.SaveChangesAsync();
+            _cache.Remove($"GlobalOTP_{cleanEmail}");
 
-            _cache.Remove($"UserOTP_{model.Email}");
             return Ok(new { Success = true, Message = "Đặt lại mật khẩu thành công!" });
         }
-
         private async Task SendEmailAsync(string toEmail, string subject, string body)
         {
             var fromEmail = _config["MailSettings:Mail"];
