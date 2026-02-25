@@ -7,6 +7,14 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Add services
+builder.Services.AddControllers().AddJsonOptions(options =>
+{
+    // Cấu hình bỏ qua lỗi vòng lặp JSON vô tận của Entity Framework
+    options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+});
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 
 // 1. Kết nối Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -90,7 +98,6 @@ app.UseHttpsRedirection();
 app.UseCors("AllowVue");
 app.UseAuthentication();
 app.UseMiddleware<SecurityStampMiddleware>();
-
 app.UseAuthorization();
 app.MapControllers();
 
