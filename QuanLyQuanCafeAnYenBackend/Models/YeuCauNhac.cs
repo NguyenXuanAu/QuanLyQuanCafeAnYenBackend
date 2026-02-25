@@ -23,5 +23,9 @@ public partial class YeuCauNhac
 
     public string? MaBan { get; set; }
 
+    public string? MaBaiHat { get; set; }
+
+    public virtual BaiHat? MaBaiHatNavigation { get; set; }
+
     public virtual Ban? MaBanNavigation { get; set; }
 }
