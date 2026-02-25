@@ -29,6 +29,7 @@ public class MonAnController : ControllerBase
                 TenDanhMuc = x.MaDanhMucNavigation.TenDanhMuc,
                 x.DonViTinh,
                 x.ConHang,
+                x.ChuThich,
                 x.MoTa
             })
             .ToListAsync();
@@ -63,6 +64,7 @@ public class MonAnController : ControllerBase
             MaDanhMuc = dto.MaDanhMuc.Trim(),
             DonViTinh = dto.DonViTinh ?? "Ly",
             ConHang = dto.ConHang ?? true,
+            ChuThich = dto.ChuThich,
             MoTa = dto.MoTa ?? ""
         };
 
@@ -93,6 +95,7 @@ public class MonAnController : ControllerBase
         mon.MaDanhMuc = dto.MaDanhMuc.Trim();
         mon.DonViTinh = dto.DonViTinh ?? "Ly";
         mon.ConHang = dto.ConHang ?? true;
+        mon.ChuThich = dto.ChuThich;
         mon.MoTa = dto.MoTa ?? "";
 
         await _context.SaveChangesAsync();

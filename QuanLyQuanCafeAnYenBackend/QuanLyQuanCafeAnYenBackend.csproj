@@ -17,6 +17,7 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.15.0" />
+    <Folder Include="wwwroot\images\feedback\" />
     <Folder Include="wwwroot\images\tang\tang4\" />
     <Folder Include="wwwroot\images\tang\tang3\" />
     <Folder Include="wwwroot\images\tang\tang2\" />

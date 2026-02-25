@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace QuanLyQuanCafeAnYenBackend.Models;
 
@@ -15,11 +17,11 @@ public partial class ChiTietHoaDon
 
     public string? GhiChu { get; set; }
 
-    public string MaHoaDon { get; set; } = null!;
+    public string MaHoaDon { get; set; }
+    [ForeignKey("MaHoaDon")]
+    public virtual HoaDon HoaDon { get; set; }
 
-    public string MaMonAn { get; set; } = null!;
-
-    public virtual HoaDon MaHoaDonNavigation { get; set; } = null!;
-
-    public virtual MonAn MaMonAnNavigation { get; set; } = null!;
+    public string MaMonAn { get; set; }
+    [ForeignKey("MaMonAn")]
+    public virtual MonAn MonAn { get; set; }
 }

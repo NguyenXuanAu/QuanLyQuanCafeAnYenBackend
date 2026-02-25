@@ -29,7 +29,7 @@ public partial class NguoiDung
 
     public string? ChuThich { get; set; }
 
-    public virtual ICollection<DanhGium> DanhGia { get; set; } = new List<DanhGium>();
+    public string? SecurityStamp { get; set; }
 
     public virtual ICollection<DonDatBan> DonDatBans { get; set; } = new List<DonDatBan>();
 

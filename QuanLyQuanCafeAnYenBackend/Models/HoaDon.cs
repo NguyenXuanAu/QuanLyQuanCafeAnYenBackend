@@ -35,7 +35,6 @@ public partial class HoaDon
 
     public virtual ICollection<ChiTietHoaDon> ChiTietHoaDons { get; set; } = new List<ChiTietHoaDon>();
 
-    public virtual ICollection<DanhGium> DanhGia { get; set; } = new List<DanhGium>();
 
     public virtual ICollection<LichSuDiem> LichSuDiems { get; set; } = new List<LichSuDiem>();
 
