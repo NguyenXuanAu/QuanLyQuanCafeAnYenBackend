@@ -156,9 +156,24 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         [HttpPost("Forgotpassword")]
         public async Task<IActionResult> ForgotPassword([FromBody] string account)
         {
-            // BƯỚC SỬA: Loại bỏ dấu ngoặc kép và ép về chữ thường để đồng bộ Cache
+            // 1. Làm sạch dữ liệu trước
             string cleanAccount = account?.Replace("\"", "").Trim().ToLower() ?? "";
 
+            if (string.IsNullOrEmpty(cleanAccount))
+                return BadRequest(new { Message = "Thông tin tài khoản không được để trống" });
+
+            // 2. KIỂM TRA ĐỊNH DẠNG EMAIL THỦ CÔNG (Vì đã bỏ ở DTO)
+            // Nếu account chứa ký tự '@' thì mới kiểm tra định dạng Email
+            if (cleanAccount.Contains("@"))
+            {
+                var emailChecker = new System.ComponentModel.DataAnnotations.EmailAddressAttribute();
+                if (!emailChecker.IsValid(cleanAccount))
+                {
+                    return BadRequest(new { Message = "Định dạng Email không hợp lệ!" });
+                }
+            }
+
+            // 3. Truy vấn dữ liệu như cũ
             var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.SoDienThoai == cleanAccount || u.Email == cleanAccount);
             var staff = (user == null) ? await _context.NhanViens.FirstOrDefaultAsync(s => s.SoDienThoai == cleanAccount || s.Email == cleanAccount || s.MaNhanVien == cleanAccount) : null;
 
@@ -170,9 +185,8 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 return NotFound(new { Message = "Không tìm thấy tài khoản liên kết với thông tin này" });
             }
 
+            // ... phần sinh OTP và gửi Mail giữ nguyên ...
             string otp = new Random().Next(100000, 999999).ToString();
-
-            // Lưu vào Cache với Key là Email đã được viết thường
             _cache.Set(targetEmail, otp, TimeSpan.FromMinutes(5));
 
             try
