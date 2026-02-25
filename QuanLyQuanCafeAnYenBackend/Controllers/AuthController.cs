@@ -81,7 +81,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         {
             string hashedInput = SimpleHash(model.Password);
             string phone = model.Phone.Trim();
-
             // 1. Kiểm tra Người dùng
             var user = await _context.NguoiDungs
                 .FirstOrDefaultAsync(u => (u.SoDienThoai.Trim() == phone || u.Email.Trim() == phone)
@@ -104,7 +103,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                     User = new { user.HoTen, user.Email }
                 });
             }
-
             // 2. Kiểm tra nếu là Nhân viên thì báo chuyển trang
             var staff = await _context.NhanViens
                 .FirstOrDefaultAsync(s => (s.SoDienThoai.Trim() == phone || s.Email.Trim() == phone || s.MaNhanVien.Trim() == phone)
@@ -117,7 +115,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
 
             return Unauthorized(new { Success = false, Message = "Tài khoản hoặc mật khẩu không chính xác" });
         }
-
         // THÊM: Đăng xuất tất cả thiết bị cho khách hàng
         [HttpPost("LogoutAllDevices")]
         public async Task<IActionResult> LogoutAllDevices([FromBody] string userId)
@@ -145,6 +142,7 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 return NotFound(new { Message = "Không tìm thấy thông tin tài khoản hoặc Email liên kết" });
             }
 
+            // ... phần sinh OTP và gửi Mail giữ nguyên ...
             string otp = new Random().Next(100000, 999999).ToString();
             // PHÂN TÁCH CACHE: Dùng prefix khác với Admin
             _cache.Set($"UserOTP_{user.Email}", otp, TimeSpan.FromMinutes(5));
@@ -169,7 +167,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             {
                 return BadRequest(new { Message = "Mã OTP không chính xác hoặc đã hết hạn" });
             }
-
             var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.Email == model.Email);
             if (user == null) return NotFound();
 
@@ -178,7 +175,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
 
             _context.NguoiDungs.Update(user);
             await _context.SaveChangesAsync();
-
             _cache.Remove($"UserOTP_{model.Email}");
             return Ok(new { Success = true, Message = "Đặt lại mật khẩu thành công!" });
         }
@@ -207,5 +203,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             mailMessage.To.Add(toEmail);
             await smtpClient.SendMailAsync(mailMessage);
         }
+
     }
 }
