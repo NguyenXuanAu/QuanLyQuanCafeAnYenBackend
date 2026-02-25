@@ -81,7 +81,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         {
             string hashedInput = SimpleHash(model.Password);
             string phone = model.Phone.Trim();
-
             // 1. Kiểm tra Người dùng
             var user = await _context.NguoiDungs
                 .FirstOrDefaultAsync(u => (u.SoDienThoai.Trim() == phone || u.Email.Trim() == phone)
@@ -104,7 +103,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                     User = new { user.HoTen, user.Email }
                 });
             }
-
             // 2. Kiểm tra nếu là Nhân viên thì báo chuyển trang
             var staff = await _context.NhanViens
                 .FirstOrDefaultAsync(s => (s.SoDienThoai.Trim() == phone || s.Email.Trim() == phone || s.MaNhanVien.Trim() == phone)
@@ -117,7 +115,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
 
             return Unauthorized(new { Success = false, Message = "Tài khoản hoặc mật khẩu không chính xác" });
         }
-
         // THÊM: Đăng xuất tất cả thiết bị cho khách hàng
         [HttpPost("LogoutAllDevices")]
         public async Task<IActionResult> LogoutAllDevices([FromBody] string userId)
@@ -155,7 +152,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             {
                 return NotFound(new { Message = "Không tìm thấy tài khoản liên kết với thông tin này" });
             }
-
             // 4. Sinh mã OTP dùng chung một Prefix Global
             string otp = new Random().Next(100000, 999999).ToString();
             _cache.Set($"GlobalOTP_{targetEmail}", otp, TimeSpan.FromMinutes(5));
@@ -232,5 +228,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             mailMessage.To.Add(toEmail);
             await smtpClient.SendMailAsync(mailMessage);
         }
+
     }
 }
