@@ -3,7 +3,11 @@ using QuanLyQuanCafeAnYenBackend.Models;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services
-builder.Services.AddControllers();
+builder.Services.AddControllers().AddJsonOptions(options =>
+{
+    // Cấu hình bỏ qua lỗi vòng lặp JSON vô tận của Entity Framework
+    options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -88,10 +92,6 @@ if (app.Environment.IsDevelopment())
 }
 app.UseHttpsRedirection();
 app.UseCors("AllowVueApp");
-
-
-app.UseCors("AllowVue");
-
 
 app.UseAuthorization();
 app.MapControllers();

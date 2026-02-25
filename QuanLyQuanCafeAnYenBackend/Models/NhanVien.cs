@@ -52,4 +52,6 @@ public partial class NhanVien
     public virtual ICollection<MuonThietBi> MuonThietBis { get; set; } = new List<MuonThietBi>();
     [JsonIgnore]
     public virtual ICollection<PhanCong> PhanCongs { get; set; } = new List<PhanCong>();
+    [JsonIgnore]
+    public virtual ICollection<Playlist> Playlists { get; set; } = new List<Playlist>();
 }
