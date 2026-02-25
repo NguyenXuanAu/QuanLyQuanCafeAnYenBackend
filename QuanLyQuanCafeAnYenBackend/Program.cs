@@ -79,7 +79,7 @@ var imagesPath = Path.Combine(webRootPath, "images");
 if (!Directory.Exists(imagesPath))
     Directory.CreateDirectory(imagesPath);
 
-foreach (var folder in new[] { "tang", "ban", "monan", "danhmuc" })
+foreach (var folder in new[] { "tang", "ban", "monan", "danhmuc", "feedback" })
 {
     var folderPath = Path.Combine(imagesPath, folder);
     if (!Directory.Exists(folderPath))
@@ -95,6 +95,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseStaticFiles();
 app.UseCors("AllowVue");
 app.UseAuthentication();
 app.UseMiddleware<SecurityStampMiddleware>();

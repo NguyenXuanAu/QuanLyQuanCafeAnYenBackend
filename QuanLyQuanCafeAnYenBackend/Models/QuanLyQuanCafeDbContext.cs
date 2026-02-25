@@ -27,8 +27,6 @@ public partial class QuanLyQuanCafeDbContext : DbContext
 
     public virtual DbSet<ChiTietPlaylist> ChiTietPlaylists { get; set; }
 
-    public virtual DbSet<DanhGium> DanhGia { get; set; }
-
     public virtual DbSet<DanhMuc> DanhMucs { get; set; }
 
     public virtual DbSet<DonDatBan> DonDatBans { get; set; }
@@ -37,7 +35,6 @@ public partial class QuanLyQuanCafeDbContext : DbContext
 
     public virtual DbSet<HinhAnhBan> HinhAnhBans { get; set; }
 
-    public virtual DbSet<HinhAnhDanhGium> HinhAnhDanhGia { get; set; }
 
     public virtual DbSet<HinhAnhDanhMuc> HinhAnhDanhMucs { get; set; }
 
@@ -66,7 +63,8 @@ public partial class QuanLyQuanCafeDbContext : DbContext
     public virtual DbSet<Tang> Tangs { get; set; }
 
     public virtual DbSet<YeuCauNhac> YeuCauNhacs { get; set; }
-
+    public virtual DbSet<DanhGia> DanhGias { get; set; }
+    public virtual DbSet<HinhAnhDanhGia> HinhAnhDanhGias { get; set; }
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
 #warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
         => optionsBuilder.UseSqlServer("Data Source=DESKTOP-ANJJC90;Initial Catalog=QuanLyQuanCafeDb;Integrated Security=True;Encrypt=True;Trust Server Certificate=True");
@@ -251,7 +249,7 @@ public partial class QuanLyQuanCafeDbContext : DbContext
                 .HasConstraintName("FK__ChiTietPl__MaPla__1BC821DD");
         });
 
-        modelBuilder.Entity<DanhGium>(entity =>
+        modelBuilder.Entity<DanhGia>(entity =>
         {
             entity.HasKey(e => e.MaDanhGia).HasName("PK__DanhGia__AA9515BF0D8E659C");
 
@@ -271,15 +269,6 @@ public partial class QuanLyQuanCafeDbContext : DbContext
             entity.Property(e => e.NgayDanhGia)
                 .HasDefaultValueSql("(getdate())")
                 .HasColumnType("datetime");
-
-            entity.HasOne(d => d.MaHoaDonNavigation).WithMany(p => p.DanhGia)
-                .HasForeignKey(d => d.MaHoaDon)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__DanhGia__MaHoaDo__2BFE89A6");
-
-            entity.HasOne(d => d.MaNguoiDungNavigation).WithMany(p => p.DanhGia)
-                .HasForeignKey(d => d.MaNguoiDung)
-                .HasConstraintName("FK__DanhGia__MaNguoi__2CF2ADDF");
         });
 
         modelBuilder.Entity<DanhMuc>(entity =>
@@ -437,7 +426,7 @@ public partial class QuanLyQuanCafeDbContext : DbContext
                 .HasConstraintName("FK__HinhAnhBa__MaBan__6383C8BA");
         });
 
-        modelBuilder.Entity<HinhAnhDanhGium>(entity =>
+        modelBuilder.Entity<HinhAnhDanhGia>(entity =>
         {
             entity.HasKey(e => e.MaHinhAnh).HasName("PK__HinhAnhD__A9C37A9B41F3E0C7");
 
@@ -453,10 +442,6 @@ public partial class QuanLyQuanCafeDbContext : DbContext
                 .IsUnicode(false)
                 .IsFixedLength();
             entity.Property(e => e.ThuTuHienThi).HasDefaultValue(0);
-
-            entity.HasOne(d => d.MaDanhGiaNavigation).WithMany(p => p.HinhAnhDanhGia)
-                .HasForeignKey(d => d.MaDanhGia)
-                .HasConstraintName("FK__HinhAnhDa__MaDan__30C33EC3");
         });
 
         modelBuilder.Entity<HinhAnhDanhMuc>(entity =>
