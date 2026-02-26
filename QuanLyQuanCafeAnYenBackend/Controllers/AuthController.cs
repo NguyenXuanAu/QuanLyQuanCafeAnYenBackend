@@ -94,14 +94,21 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                     user.SecurityStamp = Guid.NewGuid().ToString();
                     await _context.SaveChangesAsync();
                 }
-
                 return Ok(new
                 {
                     Success = true,
                     IsAdminAccount = false,
                     Token = GenerateJwtToken(user),
-                    User = new { user.HoTen, user.Email }
+                    // 👉 FIX BUG: Trả thêm MaNguoiDung và SoDienThoai về cho Frontend
+                    User = new { user.MaNguoiDung, user.HoTen, user.SoDienThoai, user.Email }
                 });
+                //Hoang sửa
+                //return Ok(new
+                //{
+                //    Success = true,
+                //    Token = GenerateJwtToken(user),
+                //    User = new { user.HoTen, user.Email }
+                //});
             }
             // 2. Kiểm tra nếu là Nhân viên thì báo chuyển trang
             var staff = await _context.NhanViens
@@ -227,6 +234,50 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             };
             mailMessage.To.Add(toEmail);
             await smtpClient.SendMailAsync(mailMessage);
+        }
+
+        [HttpPost("register")]
+        public async Task<IActionResult> Register([FromBody] RegisterRequest model)
+        {
+            // Kiểm tra số điện thoại đã tồn tại chưa
+            if (await _context.NguoiDungs.AnyAsync(u => u.SoDienThoai == model.Phone))
+                return BadRequest(new { success = false, message = "Số điện thoại này đã được đăng ký!" });
+
+            // Tạo mã người dùng mới (VD: ND011)
+            var lastUser = await _context.NguoiDungs.OrderByDescending(u => u.MaNguoiDung).FirstOrDefaultAsync();
+            int nextId = 1;
+            if (lastUser != null && lastUser.MaNguoiDung.StartsWith("ND"))
+            {
+                int.TryParse(lastUser.MaNguoiDung.Substring(2), out nextId);
+                nextId++;
+            }
+
+            var newUser = new NguoiDung
+            {
+                MaNguoiDung = $"ND{nextId:D3}",
+                HoTen = model.Name,
+                SoDienThoai = model.Phone,
+                Email = model.Email,
+                MatKhauHash = SimpleHash(model.Password), // Dùng hàm băm có sẵn trong AuthController
+                DoTuoi = int.Parse(model.Age),
+                NgayTao = DateTime.Now,
+                SecurityStamp = Guid.NewGuid().ToString()
+            };
+
+            _context.NguoiDungs.Add(newUser);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { success = true, message = "Đăng ký thành công!" });
+        }
+
+        // Thêm class này vào cuối file AuthController.cs (ngoài class chính) để hứng dữ liệu
+        public class RegisterRequest
+        {
+            public string Name { get; set; }
+            public string Phone { get; set; }
+            public string Email { get; set; }
+            public string Password { get; set; }
+            public string Age { get; set; }
         }
 
     }
