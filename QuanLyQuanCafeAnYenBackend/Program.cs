@@ -8,7 +8,14 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ================= 1. CẤU HÌNH SERVICES (Trước khi Build) =================
+// Add services
+builder.Services.AddControllers().AddJsonOptions(options =>
+{
+    // Cấu hình bỏ qua lỗi vòng lặp JSON vô tận của Entity Framework
+    options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+});
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 
 // Kết nối Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -73,7 +80,9 @@ if (string.IsNullOrEmpty(webRootPath))
 }
 if (!Directory.Exists(webRootPath)) Directory.CreateDirectory(webRootPath);
 var imagesPath = Path.Combine(webRootPath, "images");
-if (!Directory.Exists(imagesPath)) Directory.CreateDirectory(imagesPath);
+if (!Directory.Exists(imagesPath))
+    Directory.CreateDirectory(imagesPath);
+
 foreach (var folder in new[] { "tang", "ban", "monan", "danhmuc" })
 {
     var folderPath = Path.Combine(imagesPath, folder);
@@ -87,15 +96,12 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseStaticFiles();
-
-
 app.UseCors("AllowVue");
 
 app.UseAuthentication();
 app.UseMiddleware<SecurityStampMiddleware>();
-app.UseAuthorization();
 
+app.UseAuthorization();
 app.MapControllers();
 app.MapHub<NotificationHub>("/notificationHub"); // Ánh xạ đường truyền Hub
 
