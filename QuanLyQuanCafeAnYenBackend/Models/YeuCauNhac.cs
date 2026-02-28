@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 
 namespace QuanLyQuanCafeAnYenBackend.Models;
 
@@ -28,4 +29,6 @@ public partial class YeuCauNhac
     public virtual BaiHat? MaBaiHatNavigation { get; set; }
 
     public virtual Ban? MaBanNavigation { get; set; }
+    [Required]
+    public required string MaNguoiDung { get; set; }
 }
