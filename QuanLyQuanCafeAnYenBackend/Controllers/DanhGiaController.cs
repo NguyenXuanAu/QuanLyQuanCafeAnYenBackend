@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using QuanLyQuanCafeAnYenBackend.Models;
 using System.IO;
@@ -48,7 +48,21 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
 
             return Ok(feedbacks);
         }
+        // DELETE: api/DanhGia/{id}
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(string id)
+        {
+            var danhGia = await _context.DanhGias
+                .FirstOrDefaultAsync(d => d.MaDanhGia == id);
 
+            if (danhGia == null)
+                return NotFound("Không tìm thấy đánh giá.");
+
+            _context.DanhGias.Remove(danhGia);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Xóa đánh giá thành công!" });
+        }
         // --- GỬI ĐÁNH GIÁ MỚI ---
         [HttpPost("submit")]
         public async Task<IActionResult> SubmitFeedback([FromForm] DanhGiaInputDto input)
