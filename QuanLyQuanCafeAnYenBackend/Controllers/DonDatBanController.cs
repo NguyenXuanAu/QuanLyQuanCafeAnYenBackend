@@ -103,5 +103,51 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
 
             return Ok(data);
         }
+
+
+
+
+        // nhân viên đăng nhập xong sẽ được trả lại danh bàn theo tầng của nhân viên đó
+        [HttpGet("floor-map/{maNhanVien}")]
+        public async Task<IActionResult> GetFloorMap(string maNhanVien)
+        {
+            // Logic gắn cứng tầng theo mã nhân viên
+            string maTang = maNhanVien switch
+            {
+                "NV001" => "T01",
+                "NV002" => "T02",
+                "NV003" => "T03",
+                "NV004" => "T04",
+                _ => "T01" // Mặc định tầng 1 nếu không khớp
+            };
+
+            // 1. Lấy danh sách bàn của tầng đó
+            var danhSachBan = await _context.Bans
+                .Where(b => b.MaTang == maTang)
+                .ToListAsync();
+
+            // 2. Lấy danh sách đơn hàng đang phục vụ (Màu Đỏ)
+            var donHangHienTai = await _context.DonHangs
+                .Where(dh => dh.TrangThai == 0) // Giả định 0 là chưa thanh toán
+                .Select(dh => dh.MaBan)
+                .ToListAsync();
+
+            // 3. Lấy lịch đặt bàn trong 1 tiếng tới (Màu Vàng)
+            var gioSapToi = DateTime.Now.AddHours(1);
+            var lichDatSapToi = await _context.DonDatBans
+                .Where(ddb => ddb.ThoiGianDen >= DateTime.Now && ddb.ThoiGianDen <= gioSapToi && ddb.TrangThai == 0)
+                .Select(ddb => ddb.MaBan)
+                .ToListAsync();
+
+            // Kết hợp dữ liệu để trả về cho FE
+            var result = danhSachBan.Select(b => new {
+                b.MaBan,
+                b.TenBan,
+                TrangThai = donHangHienTai.Contains(b.MaBan) ? "Occupied" :
+                            (lichDatSapToi.Contains(b.MaBan) ? "Reserved" : "Available")
+            });
+
+            return Ok(result);
+        }
     }
 }
