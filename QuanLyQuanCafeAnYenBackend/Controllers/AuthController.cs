@@ -32,7 +32,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             _cache = cache;
         }
 
-        // THÊM: Kiểm tra Token cho khách hàng tương tự Admin
         [Authorize]
         [HttpGet("CheckToken")]
         public IActionResult CheckToken()
@@ -50,10 +49,10 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 Subject = new ClaimsIdentity(new[]
                 {
                     new Claim("UserId", user.MaNguoiDung.Trim()),
-                    new Claim("FullName", user.HoTen),
+                    new Claim("FullName", user.HoTen ?? ""),
                     new Claim(ClaimTypes.Role, user.VaiTro == 1 ? "Admin" : "User"),
-                    new Claim("Type", "Customer"), // Để phân biệt với "Staff"
-                    new Claim("SecurityStamp", user.SecurityStamp ?? "") // Thêm Stamp vào Token
+                    new Claim("Type", "Customer"),
+                    new Claim("SecurityStamp", user.SecurityStamp ?? Guid.NewGuid().ToString())
                 }),
                 Expires = DateTime.UtcNow.AddDays(7),
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
@@ -79,138 +78,207 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginDto model)
         {
-            string hashedInput = SimpleHash(model.Password);
-            string phone = model.Phone.Trim();
-            // 1. Kiểm tra Người dùng
-            var user = await _context.NguoiDungs
-                .FirstOrDefaultAsync(u => (u.SoDienThoai.Trim() == phone || u.Email.Trim() == phone)
-                                     && u.MatKhauHash == hashedInput);
-
-            if (user != null)
+            try
             {
-                // Tự động sinh mã bảo mật nếu chưa có
-                if (string.IsNullOrEmpty(user.SecurityStamp))
+                // Validate input
+                if (model == null || string.IsNullOrEmpty(model.Phone) || string.IsNullOrEmpty(model.Password))
                 {
-                    user.SecurityStamp = Guid.NewGuid().ToString();
-                    await _context.SaveChangesAsync();
+                    return BadRequest(new { Success = false, Message = "Vui lòng nhập đầy đủ thông tin!" });
                 }
-                return Ok(new
+
+                string hashedInput = SimpleHash(model.Password);
+                string phone = model.Phone?.Trim() ?? "";
+
+                // ===== SỬA LOGIC KIỂM TRA =====
+                // Bước 1: Tìm user theo SĐT hoặc Email (KHÔNG kiểm tra mật khẩu)
+                var user = await _context.NguoiDungs
+    .FirstOrDefaultAsync(u =>
+        (u.SoDienThoai != null && u.SoDienThoai.Trim() == phone) ||
+        (u.Email != null && u.Email.Trim() == phone));
+
+                var staff = await _context.NhanViens
+                    .FirstOrDefaultAsync(s =>
+                        (s.SoDienThoai != null && s.SoDienThoai.Trim() == phone) ||
+                        (s.Email != null && s.Email.Trim() == phone) ||
+                        (s.MaNhanVien != null && s.MaNhanVien.Trim() == phone));
+
+                // Bước 2: Nếu tìm thấy user, kiểm tra mật khẩu
+                if (user != null)
                 {
-                    Success = true,
-                    IsAdminAccount = false,
-                    Token = GenerateJwtToken(user),
-                    // 👉 FIX BUG: Trả thêm MaNguoiDung và SoDienThoai về cho Frontend
-                    User = new { user.MaNguoiDung, user.HoTen, user.SoDienThoai, user.Email }
-                });
-                //Hoang sửa
-                //return Ok(new
-                //{
-                //    Success = true,
-                //    Token = GenerateJwtToken(user),
-                //    User = new { user.HoTen, user.Email }
-                //});
-            }
-            // 2. Kiểm tra nếu là Nhân viên thì báo chuyển trang
-            var staff = await _context.NhanViens
-                .FirstOrDefaultAsync(s => (s.SoDienThoai.Trim() == phone || s.Email.Trim() == phone || s.MaNhanVien.Trim() == phone)
-                                     && s.MatKhauHash == hashedInput);
+                    if (user.MatKhauHash != hashedInput)
+                    {
+                        // Sai mật khẩu - trả về lỗi 401
+                        return Unauthorized(new { Success = false, Message = "Tài khoản hoặc mật khẩu không chính xác" });
+                    }
 
-            if (staff != null)
+                    // Đúng mật khẩu - xử lý SecurityStamp
+                    try
+                    {
+                        if (string.IsNullOrEmpty(user.SecurityStamp))
+                        {
+                            user.SecurityStamp = Guid.NewGuid().ToString();
+                            _context.NguoiDungs.Update(user);
+                            await _context.SaveChangesAsync();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log lỗi nhưng vẫn cho đăng nhập
+                        Console.WriteLine($"Lỗi cập nhật SecurityStamp: {ex.Message}");
+                    }
+
+                    return Ok(new
+                    {
+                        Success = true,
+                        IsAdminAccount = false,
+                        Token = GenerateJwtToken(user),
+                        User = new
+                        {
+                            user.HoTen,
+                            user.Email,
+                            user.SoDienThoai,
+                            user.MaNguoiDung
+                        }
+                    });
+                }
+
+                // Bước 3: Nếu không phải user, kiểm tra staff
+                
+
+                if (staff != null)
+                {
+                    // Kiểm tra mật khẩu staff
+                    if (staff.MatKhauHash != hashedInput)
+                    {
+                        return Unauthorized(new { Success = false, Message = "Tài khoản hoặc mật khẩu không chính xác" });
+                    }
+
+                    // Staff đăng nhập nhầm cổng
+                    return Ok(new
+                    {
+                        Success = true,
+                        IsAdminAccount = true,
+                        Message = "Tài khoản nhân viên, vui lòng qua cổng Admin"
+                    });
+                }
+
+                // Bước 4: Không tìm thấy tài khoản
+                return Unauthorized(new { Success = false, Message = "Tài khoản không tồn tại!" });
+            }
+            catch (Exception ex)
             {
-                return Ok(new { Success = true, IsAdminAccount = true, Message = "Tài khoản nhân viên, vui lòng qua cổng Admin" });
+                Console.WriteLine($"Lỗi đăng nhập: {ex.Message}");
+                return StatusCode(500, new { Success = false, Message = "Lỗi hệ thống: " + ex.Message });
             }
-
-            return Unauthorized(new { Success = false, Message = "Tài khoản hoặc mật khẩu không chính xác" });
         }
-        // THÊM: Đăng xuất tất cả thiết bị cho khách hàng
+
         [HttpPost("LogoutAllDevices")]
         public async Task<IActionResult> LogoutAllDevices([FromBody] string userId)
         {
-            string cleanId = userId.Replace("\"", "").Trim();
-            var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.MaNguoiDung.Trim() == cleanId);
+            try
+            {
+                string cleanId = userId?.Replace("\"", "").Trim() ?? "";
+                var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.MaNguoiDung.Trim() == cleanId);
 
-            if (user == null) return NotFound(new { Message = "Không tìm thấy người dùng" });
+                if (user == null)
+                    return NotFound(new { Message = "Không tìm thấy người dùng" });
 
-            user.SecurityStamp = Guid.NewGuid().ToString();
-            _context.NguoiDungs.Update(user);
-            await _context.SaveChangesAsync();
+                // Đổi Stamp để vô hiệu hóa toàn bộ Token cũ
+                user.SecurityStamp = Guid.NewGuid().ToString();
+                await _context.SaveChangesAsync();
 
-            return Ok(new { Success = true, Message = "Đã vô hiệu hóa toàn bộ Token khách hàng cũ!" });
+                return Ok(new { Success = true, Message = "Đã vô hiệu hóa toàn bộ phiên đăng nhập cũ!" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { Success = false, Message = "Lỗi: " + ex.Message });
+            }
         }
 
         [HttpPost("Forgotpassword")]
         public async Task<IActionResult> ForgotPassword([FromBody] string account)
         {
-            // 1. Làm sạch dữ liệu đầu vào
-            string cleanAccount = account?.Replace("\"", "").Trim().ToLower() ?? "";
-
-            if (string.IsNullOrEmpty(cleanAccount))
-                return BadRequest(new { Message = "Thông tin tài khoản không được để trống" });
-
-            // 2. Tìm kiếm ở cả 2 bảng: Người dùng và Nhân viên
-            var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.SoDienThoai == cleanAccount || u.Email == cleanAccount);
-            var staff = (user == null) ? await _context.NhanViens.FirstOrDefaultAsync(s => s.SoDienThoai == cleanAccount || s.Email == cleanAccount || s.MaNhanVien == cleanAccount) : null;
-
-            // 3. Xác định Email và Tên người nhận
-            var targetEmail = (user?.Email ?? staff?.Email)?.ToLower().Trim();
-            var targetName = user?.HoTen ?? staff?.HoTen;
-
-            if (string.IsNullOrEmpty(targetEmail))
-            {
-                return NotFound(new { Message = "Không tìm thấy tài khoản liên kết với thông tin này" });
-            }
-            // 4. Sinh mã OTP dùng chung một Prefix Global
-            string otp = new Random().Next(100000, 999999).ToString();
-            _cache.Set($"GlobalOTP_{targetEmail}", otp, TimeSpan.FromMinutes(5));
-
             try
             {
-                await SendEmailAsync(targetEmail, "Mã OTP phục hồi mật khẩu - An Yên Coffee",
-                    $"<h3>Xin chào {targetName},</h3><p>Mã OTP của bạn là: <b style='color:red; font-size:20px;'>{otp}</b></p>");
+                string cleanAccount = account?.Replace("\"", "").Trim().ToLower() ?? "";
+                if (string.IsNullOrEmpty(cleanAccount))
+                    return BadRequest(new { Message = "Thông tin tài khoản không được để trống" });
 
-                return Ok(new { Success = true, Message = "Mã OTP đã được gửi về Email của bạn", Email = targetEmail });
+                var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.SoDienThoai == cleanAccount || u.Email == cleanAccount);
+                var staff = (user == null) ? await _context.NhanViens.FirstOrDefaultAsync(s => s.SoDienThoai == cleanAccount || s.Email == cleanAccount || s.MaNhanVien == cleanAccount) : null;
+
+                var targetEmail = (user?.Email ?? staff?.Email)?.ToLower().Trim();
+                var targetName = user?.HoTen ?? staff?.HoTen;
+
+                if (string.IsNullOrEmpty(targetEmail))
+                    return NotFound(new { Message = "Không tìm thấy tài khoản liên kết" });
+
+                string otp = new Random().Next(100000, 999999).ToString();
+                _cache.Set($"GlobalOTP_{targetEmail}", otp, TimeSpan.FromMinutes(5));
+
+                try
+                {
+                    await SendEmailAsync(targetEmail, "Mã OTP phục hồi mật khẩu - An Yên Coffee",
+                        $"<h3>Xin chào {targetName},</h3><p>Mã OTP của bạn là: <b style='color:red; font-size:20px;'>{otp}</b></p>");
+
+                    return Ok(new { Success = true, Message = "Mã OTP đã được gửi về Email của bạn", Email = targetEmail });
+                }
+                catch (Exception ex)
+                {
+                    return StatusCode(500, new { Message = "Lỗi gửi Email: " + ex.Message });
+                }
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { Message = "Lỗi gửi Email: " + ex.Message });
+                return StatusCode(500, new { Message = "Lỗi hệ thống: " + ex.Message });
             }
         }
 
         [HttpPost("ResetPassword")]
         public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto model)
         {
-            string cleanEmail = model.Email?.Replace("\"", "").Trim().ToLower() ?? "";
-
-            // Kiểm tra OTP từ bộ nhớ đệm dùng chung
-            if (!_cache.TryGetValue($"GlobalOTP_{cleanEmail}", out string savedOtp) || savedOtp != model.Otp?.Trim())
+            try
             {
-                return BadRequest(new { Message = "Mã OTP không chính xác hoặc đã hết hạn" });
+                string cleanEmail = model.Email?.Replace("\"", "").Trim().ToLower() ?? "";
+
+                if (!_cache.TryGetValue($"GlobalOTP_{cleanEmail}", out string savedOtp) || savedOtp != model.Otp?.Trim())
+                {
+                    return BadRequest(new { Message = "Mã OTP không chính xác hoặc đã hết hạn" });
+                }
+
+                var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.Email == cleanEmail);
+                var staff = await _context.NhanViens.FirstOrDefaultAsync(s => s.Email == cleanEmail);
+
+                if (user == null && staff == null)
+                    return NotFound(new { Message = "Không tìm thấy tài khoản" });
+
+                string hashedPass = SimpleHash(model.NewPassword);
+                string newStamp = Guid.NewGuid().ToString();
+
+                if (user != null)
+                {
+                    user.MatKhauHash = hashedPass;
+                    user.SecurityStamp = newStamp;
+                    _context.NguoiDungs.Update(user);
+                }
+                if (staff != null)
+                {
+                    staff.MatKhauHash = hashedPass;
+                    staff.SecurityStamp = newStamp;
+                    _context.NhanViens.Update(staff);
+                }
+
+                await _context.SaveChangesAsync();
+                _cache.Remove($"GlobalOTP_{cleanEmail}");
+
+                return Ok(new { Success = true, Message = "Đặt lại mật khẩu thành công!" });
             }
-
-            var user = await _context.NguoiDungs.FirstOrDefaultAsync(u => u.Email == cleanEmail);
-            var staff = await _context.NhanViens.FirstOrDefaultAsync(s => s.Email == cleanEmail);
-
-            if (user == null && staff == null) return NotFound();
-
-            string hashedPass = SimpleHash(model.NewPassword);
-            string newStamp = Guid.NewGuid().ToString(); // Tạo Stamp mới để vô hiệu hóa Token cũ
-
-            if (user != null)
+            catch (Exception ex)
             {
-                user.MatKhauHash = hashedPass;
-                user.SecurityStamp = newStamp;
+                return StatusCode(500, new { Message = "Lỗi hệ thống: " + ex.Message });
             }
-            if (staff != null)
-            {
-                staff.MatKhauHash = hashedPass;
-                staff.SecurityStamp = newStamp;
-            }
-
-            await _context.SaveChangesAsync();
-            _cache.Remove($"GlobalOTP_{cleanEmail}");
-
-            return Ok(new { Success = true, Message = "Đặt lại mật khẩu thành công!" });
         }
+
         private async Task SendEmailAsync(string toEmail, string subject, string body)
         {
             var fromEmail = _config["MailSettings:Mail"];
@@ -218,7 +286,7 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             var host = _config["MailSettings:Host"] ?? "smtp.gmail.com";
             var port = int.Parse(_config["MailSettings:Port"] ?? "587");
 
-            var smtpClient = new SmtpClient(host)
+            using var smtpClient = new SmtpClient(host)
             {
                 Port = port,
                 Credentials = new NetworkCredential(fromEmail, password),
@@ -279,6 +347,5 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             public string Password { get; set; }
             public string Age { get; set; }
         }
-
     }
 }
