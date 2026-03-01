@@ -28,8 +28,19 @@ namespace AnYenCoffee.Controllers
             }
 
             string hangThanhVien = "Thành viên";
-            if (khachHang.DiemTichLuy >= 500) hangThanhVien = "Vàng";
-            else if (khachHang.DiemTichLuy >= 100) hangThanhVien = "Bạc";
+
+            if (khachHang.DiemTichLuy >= 500)
+            {
+                hangThanhVien = "Kim cương";
+            }
+            else if (khachHang.DiemTichLuy >= 300)
+            {
+                hangThanhVien = "Vàng";
+            }
+            else if (khachHang.DiemTichLuy >= 100)
+            {
+                hangThanhVien = "Bạc";
+            }
 
             return Ok(new
             {
@@ -95,16 +106,28 @@ namespace AnYenCoffee.Controllers
             _context.LichSuDiems.Add(lichSu);
             await _context.SaveChangesAsync();
 
-           
+
             string hangThanhVien = "Thành viên";
-            if (khachHang.DiemTichLuy >= 500) hangThanhVien = "Vàng";
-            else if (khachHang.DiemTichLuy >= 100) hangThanhVien = "Bạc";
+
+            if (khachHang.DiemTichLuy >= 500)
+            {
+                hangThanhVien = "Kim cương";
+            }
+            else if (khachHang.DiemTichLuy >= 300)
+            {
+                hangThanhVien = "Vàng";
+            }
+            else if (khachHang.DiemTichLuy >= 100)
+            {
+                hangThanhVien = "Bạc";
+            }
 
             return Ok(new
             {
-                message = "Cộng điểm thành công!",
-                diemMoi = khachHang.DiemTichLuy,
-                hangMoi = hangThanhVien
+                hoTen = khachHang.HoTen,
+                soDienThoai = khachHang.SoDienThoai,
+                diemTichLuy = khachHang.DiemTichLuy,
+                hang = hangThanhVien
             });
 
         }
