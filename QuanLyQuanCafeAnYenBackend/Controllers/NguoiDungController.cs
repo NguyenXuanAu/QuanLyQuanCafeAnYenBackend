@@ -16,7 +16,7 @@ namespace AnYenCoffee.Controllers
             _context = context;
         }
 
-        [HttpGet("TraCuu/{SoDienThoai}")]
+        [HttpGet("TraCuu/{soDienThoai}")]
         public async Task<IActionResult> TraCuuDiem(string soDienThoai)
         {
             var khachHang = await _context.NguoiDungs
@@ -40,7 +40,7 @@ namespace AnYenCoffee.Controllers
             });
         }
 
-        [HttpGet("LichSu/{SoDienThoai}")]
+        [HttpGet("LichSu/{soDienThoai}")]
         public async Task<IActionResult> LayLichSuDiem(string soDienThoai)
         {
             var khachHang = await _context.NguoiDungs
