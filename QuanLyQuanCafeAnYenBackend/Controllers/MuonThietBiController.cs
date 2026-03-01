@@ -22,12 +22,37 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         public async Task<IActionResult> GetAll()
         {
             var data = await _context.MuonThietBis
+                .Include(x => x.MaNhanVienChoMuonNavigation)
+                .Include(x => x.MaBanNavigation)
                 .OrderByDescending(x => x.ThoiGianMuon)
                 .ToListAsync();
 
             return Ok(data);
         }
+        [HttpGet("device/{maNguoiDung}")]
+        public async Task<IActionResult> GetDevice(string maNguoiDung)
+        {
+            var data = await _context.MuonThietBis
+                .Include(x => x.MaNhanVienChoMuonNavigation)
+                .Include(x => x.MaBanNavigation)
+                .Where(x => x.MaNguoiDung == maNguoiDung)
+                .Select(x => new
+                {
+                    x.MaLuotMuon,
+                    x.TenThietBi,
+                    x.TrangThai,
+                    x.ThoiGianMuon,
+                    x.ThoiGianTra,
+                    x.MaBan,
+                    TenBan = x.MaBanNavigation.TenBan,
+                    x.MaNhanVienChoMuon,
+                    TenNhanVien = x.MaNhanVienChoMuonNavigation.HoTen
+                })
+                .OrderByDescending(x => x.ThoiGianMuon)
+                .ToListAsync();
 
+            return Ok(data);
+        }
         // =======================
         // GET: api/MuonThietBi/MT001
         // =======================
@@ -49,35 +74,46 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         [HttpPost]
         public async Task<IActionResult> MuonThietBi([FromBody] MuonThietBi model)
         {
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
-
-            model.ThoiGianMuon = DateTime.Now;
-            model.TrangThai = 0; // Đang mượn
+            model.TrangThai = 0; // Đang xét duyệt
+            model.ThoiGianMuon = null;
             model.ThoiGianTra = null;
+            model.MaNhanVienChoMuon = null;
 
             _context.MuonThietBis.Add(model);
             await _context.SaveChangesAsync();
 
             return Ok(model);
         }
-
-        // =======================
-        // PUT: api/MuonThietBi/TraThietBi/MT001
-        // =======================
-        [HttpPut("TraThietBi/{maLuotMuon}")]
-        public async Task<IActionResult> TraThietBi(string maLuotMuon)
+        [HttpPut("Duyet/{maLuotMuon}")]
+        public async Task<IActionResult> Duyet(string maLuotMuon, [FromBody] string maNhanVien)
         {
             var item = await _context.MuonThietBis
                 .FirstOrDefaultAsync(x => x.MaLuotMuon == maLuotMuon);
 
             if (item == null)
-                return NotFound("Không tìm thấy lượt mượn");
+                return NotFound();
 
-            if (item.TrangThai == 1)
-                return BadRequest("Thiết bị đã được trả");
+            item.TrangThai = 1; // Đang mượn
+            item.MaNhanVienChoMuon = maNhanVien;
+            item.ThoiGianMuon = DateTime.Now;
 
-            item.TrangThai = 1; // Đã trả
+            await _context.SaveChangesAsync();
+
+            return Ok(item);
+        }
+        [HttpPut("Tra/{maLuotMuon}")]
+        public async Task<IActionResult> Tra(string maLuotMuon)
+        {
+            var item = await _context.MuonThietBis
+                .FirstOrDefaultAsync(x => x.MaLuotMuon == maLuotMuon);
+
+            if (item == null)
+                return NotFound();
+
+            if (item.TrangThai != 1)
+                return BadRequest("Không ở trạng thái đang mượn");
+
+            item.TrangThai = 2; // Đã trả
             item.ThoiGianTra = DateTime.Now;
 
             await _context.SaveChangesAsync();
@@ -85,16 +121,8 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             return Ok(item);
         }
         [HttpPut("Update/{maLuotMuon}")]
-        public async Task<IActionResult> Update(
-    string maLuotMuon,
-    [FromBody] MuonThietBi dto)
+        public async Task<IActionResult> Update(string maLuotMuon, [FromBody] MuonThietBi dto)
         {
-            if (dto.MaLuotMuon == null)
-                return BadRequest("Thiếu mã lượt mượn trong body");
-
-            if (maLuotMuon != dto.MaLuotMuon)
-                return BadRequest("Mã route và body không khớp");
-
             var item = await _context.MuonThietBis
                 .FirstOrDefaultAsync(x => x.MaLuotMuon == maLuotMuon);
 
@@ -102,14 +130,20 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 return NotFound();
 
             item.TenThietBi = dto.TenThietBi;
-            item.MaBan = dto.MaBan;
-            item.MaNhanVienChoMuon = dto.MaNhanVienChoMuon;
+            item.MaBan = dto.MaBan?.Trim();
+            item.MaNhanVienChoMuon = dto.MaNhanVienChoMuon?.Trim();
+            item.MaNguoiDung = dto.MaNguoiDung?.Trim();
 
             await _context.SaveChangesAsync();
 
             return Ok(item);
         }
-
+        [HttpGet("count")]
+        public async Task<IActionResult> GetCount()
+        {
+            var total = await _context.MuonThietBis.CountAsync();
+            return Ok(total);
+        }
 
         // =======================
         // DELETE: api/MuonThietBi/MT001

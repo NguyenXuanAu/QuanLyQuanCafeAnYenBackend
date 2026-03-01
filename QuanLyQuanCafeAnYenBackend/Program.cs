@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using QuanLyQuanCafeAnYenBackend.Controllers;
+using QuanLyQuanCafeAnYenBackend.Hubs;
+using QuanLyQuanCafeAnYenBackend.Middleware; 
 using QuanLyQuanCafeAnYenBackend.Models;
 using System.Text;
 
@@ -10,23 +12,20 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services
 builder.Services.AddControllers().AddJsonOptions(options =>
 {
-    // Cấu hình bỏ qua lỗi vòng lặp JSON vô tận của Entity Framework
     options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+    options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
 });
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// 1. Kết nối Database
+// Kết nối Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<QuanLyQuanCafeDbContext>(options =>
     options.UseSqlServer(connectionString));
-
-// 2. JWT Settings
 builder.Services.Configure<JWTSetting>(builder.Configuration.GetSection("AppSettings"));
 
-var secretKey = builder.Configuration["AppSettings:SecretKey"];
-var secretKeyBytes = Encoding.UTF8.GetBytes(secretKey ?? "");
-
+// JWT Settings
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -35,59 +34,29 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuer = false,
             ValidateAudience = false,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(secretKeyBytes),
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.ASCII.GetBytes(builder.Configuration["AppSettings:SecretKey"] ?? "your_secret_key")),
             ClockSkew = TimeSpan.Zero
         };
     });
 
 builder.Services.AddMemoryCache();
+builder.Services.AddSignalR();
 
-// 3. CORS
+// Cấu hình CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowVue", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.WithOrigins("http://localhost:3000", "http://localhost:3001")
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowAnyHeader()
+              .AllowCredentials();
     });
 });
 
-builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
 var app = builder.Build();
 
-// 4. Tạo thư mục wwwroot/images nếu chưa có
-var webRootPath = app.Environment.WebRootPath;
-
-if (string.IsNullOrEmpty(webRootPath))
-{
-    var currentDir = Directory.GetCurrentDirectory();
-    webRootPath = currentDir.Contains("bin")
-        ? Path.Combine(Directory.GetParent(currentDir)?.Parent?.Parent?.FullName ?? currentDir, "wwwroot")
-        : Path.Combine(currentDir, "wwwroot");
-
-    app.Environment.WebRootPath = webRootPath;
-}
-
-if (!Directory.Exists(webRootPath))
-    Directory.CreateDirectory(webRootPath);
-
-var imagesPath = Path.Combine(webRootPath, "images");
-if (!Directory.Exists(imagesPath))
-    Directory.CreateDirectory(imagesPath);
-
-foreach (var folder in new[] { "tang", "ban", "monan", "danhmuc", "feedback" })
-{
-    var folderPath = Path.Combine(imagesPath, folder);
-    if (!Directory.Exists(folderPath))
-        Directory.CreateDirectory(folderPath);
-}
-
-// 5. Middleware pipeline
-
+// Cấu hình middleware
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -95,11 +64,13 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseStaticFiles();
 app.UseCors("AllowVue");
+
 app.UseAuthentication();
-app.UseMiddleware<SecurityStampMiddleware>();
+app.UseMiddleware<SecurityStampMiddleware>(); // 👈 SỬ DỤNG ĐÚNG
 app.UseAuthorization();
+
 app.MapControllers();
+app.MapHub<NotificationHub>("/notificationHub");
 
 app.Run();

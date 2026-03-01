@@ -49,6 +49,7 @@ public partial class QuanLyQuanCafeDbContext : DbContext
     public virtual DbSet<LichSuDiem> LichSuDiems { get; set; }
 
     public virtual DbSet<MonAn> MonAns { get; set; }
+    public virtual DbSet<NhacVote> NhacVote { get; set; }
 
     public virtual DbSet<MuonThietBi> MuonThietBis { get; set; }
 
