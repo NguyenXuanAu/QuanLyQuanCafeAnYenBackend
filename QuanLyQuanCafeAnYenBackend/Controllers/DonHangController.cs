@@ -194,5 +194,119 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 return StatusCode(500, new { success = false, message = "Lỗi hệ thống: " + ex.Message });
             }
         }
+
+
+        // ==============================================================
+        // 4. API LẤY ĐƠN HÀNG HIỆN TẠI CỦA BÀN (Dùng để xem khách đang uống gì)
+        // ==============================================================
+        [HttpGet("table/{maBan}/active")]
+        public async Task<IActionResult> GetActiveOrderByTable(string maBan)
+        {
+            var donHang = await _context.DonHangs.FirstOrDefaultAsync(d => d.MaBan == maBan && d.TrangThai == 0);
+            if (donHang == null) return Ok(new { success = false, message = "Bàn trống." });
+
+            // Kết bảng ChiTiet và MonAn để lấy cả tên món
+            var items = await _context.ChiTietDonHangs
+                .Where(c => c.MaDonHang == donHang.MaDonHang)
+                .Join(_context.MonAns, c => c.MaMonAn, m => m.MaMonAn, (c, m) => new {
+                    c.MaChiTiet,
+                    c.MaMonAn,
+                    m.TenMonAn,
+                    c.SoLuong,
+                    c.GiaTaiThoiDiem,
+                    c.GhiChu,
+                    c.TrangThaiBep
+                }).ToListAsync();
+
+            return Ok(new
+            {
+                success = true,
+                tongTienGoc = items.Sum(i => i.SoLuong * i.GiaTaiThoiDiem),
+                items = items
+            });
+        }
+
+        // ==============================================================
+        // 5. API NHẬN ĐƠN (HỖ TRỢ CẢ TẠO MỚI LẪN GỌI THÊM)
+        // ==============================================================
+        [HttpPost("staff-order")]
+        public async Task<IActionResult> CreateStaffOrder([FromBody] StaffOrderRequest request)
+        {
+            if (request.Items == null || !request.Items.Any())
+                return BadRequest(new { success = false, message = "Chưa chọn món nào!" });
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                // KIỂM TRA: Bàn này đang trống hay đã có khách?
+                var donHang = await _context.DonHangs.FirstOrDefaultAsync(d => d.MaBan == request.MaBan && d.TrangThai == 0);
+                string maDonHang = "";
+
+                if (donHang == null)
+                {
+                    // Trạng thái 1: BÀN TRỐNG -> Tạo Đơn Hàng Mới
+                    maDonHang = "DH" + DateTime.Now.Ticks.ToString().Substring(10, 8);
+                    donHang = new DonHang
+                    {
+                        MaDonHang = maDonHang,
+                        LoaiDonHang = 1,
+                        ThoiGianTao = DateTime.Now,
+                        TrangThai = 0,
+                        MaBan = request.MaBan,
+                        MaNhanVienNhan = request.MaNhanVien,
+                        GhiChu = "Order tại bàn"
+                    };
+                    _context.DonHangs.Add(donHang);
+                }
+                else
+                {
+                    // Trạng thái 2: BÀN CÓ KHÁCH -> Dùng lại mã Đơn Hàng Cũ
+                    maDonHang = donHang.MaDonHang;
+                }
+
+                // Thêm các món MỚI vào Chi Tiết Đơn Hàng
+                int index = 1;
+                foreach (var item in request.Items)
+                {
+                    var chiTiet = new ChiTietDonHang
+                    {
+                        MaChiTiet = "CT" + DateTime.Now.Ticks.ToString().Substring(11, 7) + index,
+                        SoLuong = item.SoLuong,
+                        GiaTaiThoiDiem = item.GiaTien,
+                        GhiChu = item.GhiChu,
+                        TrangThaiBep = 0, // 0: Đợi pha chế (Bếp sẽ chỉ thấy món mới này nảy số)
+                        MaDonHang = maDonHang,
+                        MaMonAn = item.MaMonAn
+                    };
+                    _context.ChiTietDonHangs.Add(chiTiet);
+                    index++;
+                }
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new { success = true, message = "Đã gửi đơn xuống bếp thành công!" });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { success = false, message = "Lỗi server: " + ex.Message });
+            }
+        }
     }
+    public class StaffOrderRequest
+    {
+        public string MaBan { get; set; }
+        public string MaNhanVien { get; set; }
+        public List<StaffOrderItem> Items { get; set; }
+    }
+
+    public class StaffOrderItem
+    {
+        public string MaMonAn { get; set; }
+        public int SoLuong { get; set; }
+        public decimal GiaTien { get; set; }
+        public string GhiChu { get; set; }
+    }
+
 }
