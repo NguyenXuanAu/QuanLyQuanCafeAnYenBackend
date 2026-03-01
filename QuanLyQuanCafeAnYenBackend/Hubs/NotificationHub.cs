@@ -4,12 +4,19 @@ namespace QuanLyQuanCafeAnYenBackend.Hubs
 {
     public class NotificationHub : Hub
     {
-        // Hàm này được gọi từ máy của Lai (hoặc bất kỳ Admin nào)
-        public async Task SendOrderNotification(string message)
+        public async Task SendOrderNotification(string message, string senderConnectionId)
         {
-            // Clients.All sẽ gửi tin nhắn đến TẤT CẢ các máy đang mở trang web
-            // kể cả các Admin khác đang trực máy
-            await Clients.All.SendAsync("ReceiveOrderUpdate", new { msg = message });
+            if (string.IsNullOrEmpty(senderConnectionId))
+            {
+                // Nếu không có connectionId thì gửi tất cả
+                await Clients.All.SendAsync("ReceiveOrderUpdate", new { msg = message });
+            }
+            else
+            {
+                // Gửi cho tất cả TRỪ người bấm
+                await Clients.AllExcept(senderConnectionId)
+                    .SendAsync("ReceiveOrderUpdate", new { msg = message });
+            }
         }
     }
 }
