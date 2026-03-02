@@ -1,8 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.SignalR; // Thêm thư viện này
+using Microsoft.AspNetCore.SignalR;
 using QuanLyQuanCafeAnYenBackend.Models;
-using QuanLyQuanCafeAnYenBackend.Hubs; // Đảm bảo bạn đã tạo thư mục Hubs và NotificationHub
+using QuanLyQuanCafeAnYenBackend.Hubs;
 
 namespace QuanLyQuanCafeAnYenBackend.Controllers
 {
@@ -11,18 +11,53 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
     public class DonDatBanController : ControllerBase
     {
         private readonly QuanLyQuanCafeDbContext _context;
-        private readonly IHubContext<NotificationHub> _hubContext; // Khai báo Hub
+        private readonly IHubContext<NotificationHub> _hubContext;
 
         public DonDatBanController(QuanLyQuanCafeDbContext context, IHubContext<NotificationHub> hubContext)
         {
             _context = context;
-            _hubContext = hubContext; // Inject Hub vào Controller
+            _hubContext = hubContext;
         }
 
-        // --- CÁC API CŨ CỦA BẠN GIỮ NGUYÊN ---
+        // ==============================================================
+        // 1. API: Khách hàng gửi đơn đặt bàn mới (ĐÃ KHÔI PHỤC)
+        // ==============================================================
         [HttpPost]
-        public async Task<IActionResult> CreateBooking([FromBody] DonDatBan model) { /* Code cũ */ return Ok(); }
+        public async Task<IActionResult> CreateBooking([FromBody] DonDatBan model)
+        {
+            // 1. Xóa các trường liên kết bảng ra khỏi danh sách kiểm tra lỗi
+            ModelState.Remove("MaBanNavigation");
+            ModelState.Remove("MaNguoiDungNavigation");
+            ModelState.Remove("MaNhanVienXuLyNavigation");
+            ModelState.Remove("MaDonDat"); // Vì mã này bạn tự sinh ở dưới
 
+            // 2. Sau khi đã xóa các trường trên, mới kiểm tra xem dữ liệu còn lại có hợp lệ không
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState); // Nếu vẫn lỗi 400, Swagger sẽ chỉ ra chính xác trường nào còn thiếu
+            }
+
+            try
+            {
+                // Gán mã đơn tự sinh
+                model.MaDonDat = "DDB" + DateTime.Now.Ticks.ToString().Substring(10, 7);
+                model.ThoiGianTao = DateTime.Now;
+                model.TrangThai = 0;
+
+                _context.DonDatBans.Add(model);
+                await _context.SaveChangesAsync();
+
+                return Ok(new { success = true, maDon = model.MaDonDat });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = ex.Message });
+            }
+        }
+
+        // ==============================================================
+        // 2. API: Lấy danh sách đặt bàn
+        // ==============================================================
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
@@ -33,11 +68,56 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             return Ok(data);
         }
 
+        // ==============================================================
+        // 3. API: Lấy không gian tầng và bàn còn trống (ĐÃ KHÔI PHỤC)
+        // ==============================================================
         [HttpGet("GetAvailableSpaces")]
-        public async Task<IActionResult> GetAvailableSpaces([FromQuery] string? thoiGianDen) { /* Code cũ */ return Ok(); }
+        public async Task<IActionResult> GetAvailableSpaces([FromQuery] string? thoiGianDen)
+        {
+            DateTime? parsedTime = null;
+
+            // Nếu Frontend có gửi giờ lên, thì mới kiểm tra
+            if (!string.IsNullOrEmpty(thoiGianDen) && DateTime.TryParse(thoiGianDen, out DateTime temp))
+            {
+                parsedTime = temp;
+            }
+
+            // Thời gian ngồi dự kiến mặc định (Ví dụ: 60 phút)
+            int thoiGianNgoiMoi = 60;
+
+            var data = await _context.Tangs
+                .Select(t => new {
+                    t.MaTang,
+                    t.TenTang,
+                    t.LaKhuYenTinh,
+                    t.MoTa,
+                    Bans = _context.Bans
+                        .Where(b => b.MaTang == t.MaTang) // Lấy hết tất cả bàn, không lọc TrangThai = 0 nữa
+                        .Select(b => new {
+                            b.MaBan,
+                            b.TenBan,
+                            b.SoGhe,
+                            b.LoaiBan,
+                            b.GanCuaSo,
+                            // THUẬT TOÁN KIỂM TRA TRÙNG GIỜ
+                            IsAvailable = parsedTime == null ? true : !_context.DonDatBans.Any(d =>
+                                d.MaBan == b.MaBan &&
+                                d.TrangThai < 3 && // Bỏ qua các đơn đã Hủy (Trạng thái 3)
+                                                   // Bắt đầu trùng: Giờ cũ đến TRƯỚC khi khách mới về
+                                d.ThoiGianDen < parsedTime.Value.AddMinutes(thoiGianNgoiMoi) &&
+                                // Kết thúc trùng: Giờ cũ về SAU khi khách mới đến
+                                d.ThoiGianDen.AddMinutes(d.ThoiGianNgoiDuKien ?? 60) > parsedTime.Value
+                            )
+                        }).ToList()
+                }).ToListAsync();
+
+            return Ok(data);
+        }
 
 
-        // --- API MỚI: XÁC NHẬN HOÀN THÀNH VÀ THÔNG BÁO ---
+        // ==============================================================
+        // 4. API MỚI CỦA ĐỒNG ĐỘI: XÁC NHẬN HOÀN THÀNH VÀ THÔNG BÁO SIGNALR
+        // ==============================================================
         [HttpPatch("{id}/complete")]
         public async Task<IActionResult> CompleteBooking(string id)
         {
@@ -56,7 +136,8 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
 
                 // 3. GỬI THÔNG BÁO REAL-TIME tới tất cả nhân viên
                 string message = $"Bàn {booking.MaBanNavigation?.TenBan ?? "không tên"} đã làm xong món!";
-                await _hubContext.Clients.All.SendAsync("ReceiveOrderUpdate", new {
+                await _hubContext.Clients.All.SendAsync("ReceiveOrderUpdate", new
+                {
                     msg = message,
                     orderId = id,
                     tableName = booking.MaBanNavigation?.TenBan
@@ -70,10 +151,9 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             }
         }
 
-
-
-
-        // nhân viên đăng nhập xong sẽ được trả lại danh bàn theo tầng của nhân viên đó
+        // ==============================================================
+        // 5. API: LẤY SƠ ĐỒ BÀN CHO NHÂN VIÊN (Đã update trạng thái mới)
+        // ==============================================================
         [HttpGet("floor-map/{maNhanVien}")]
         public async Task<IActionResult> GetFloorMap(string maNhanVien)
         {
@@ -93,8 +173,9 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 .ToListAsync();
 
             // 2. Lấy danh sách đơn hàng đang phục vụ (Màu Đỏ)
+            // 💥 Đã update: Trạng thái 0 (Đang phục vụ), 1 (Đã cọc), 2 (Đã thanh toán 100% nhưng chưa dọn)
             var donHangHienTai = await _context.DonHangs
-                .Where(dh => dh.TrangThai == 0) // Giả định 0 là chưa thanh toán
+                .Where(dh => dh.TrangThai == 0 || dh.TrangThai == 1 || dh.TrangThai == 2)
                 .Select(dh => dh.MaBan)
                 .ToListAsync();
 
