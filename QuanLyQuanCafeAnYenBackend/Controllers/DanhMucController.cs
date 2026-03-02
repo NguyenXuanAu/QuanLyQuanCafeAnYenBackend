@@ -24,5 +24,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
 
             return Ok(data);
         }
+
     }
 }
