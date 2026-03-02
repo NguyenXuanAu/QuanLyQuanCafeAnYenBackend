@@ -1,9 +1,10 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using QuanLyQuanCafeAnYenBackend.Models;
 using System.IO;
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace QuanLyQuanCafeAnYenBackend.Controllers
 {
@@ -20,7 +21,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             _env = env;
         }
 
-        // --- LẤY DANH SÁCH ĐÁNH GIÁ ---
         [HttpGet("all")]
         public async Task<IActionResult> GetAllFeedbacks()
         {
@@ -49,18 +49,67 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             return Ok(feedbacks);
         }
 
-        // --- GỬI ĐÁNH GIÁ MỚI ---
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(string id)
+        {
+            var danhGia = await _context.DanhGias
+                .FirstOrDefaultAsync(d => d.MaDanhGia == id);
+
+            if (danhGia == null)
+                return NotFound("Không tìm thấy đánh giá.");
+
+            _context.DanhGias.Remove(danhGia);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Xóa đánh giá thành công!" });
+        }
+
+        [HttpPost("admin/ban-and-delete/{id}")]
+        public async Task<IActionResult> BanAndDelete(string id)
+        {
+            var danhGia = await _context.DanhGias.FirstOrDefaultAsync(d => d.MaDanhGia == id);
+            if (danhGia == null) return NotFound("Không tìm thấy đánh giá.");
+
+            var user = await _context.NguoiDungs.FindAsync(danhGia.MaNguoiDung);
+            if (user != null)
+            {
+                int currentLevel = 0;
+                if (!string.IsNullOrEmpty(user.ChuThich))
+                {
+                    if (user.ChuThich.Contains("lần 3")) currentLevel = 3;
+                    else if (user.ChuThich.Contains("lần 2")) currentLevel = 2;
+                    else if (user.ChuThich.Contains("lần 1")) currentLevel = 1;
+                }
+
+                string newViolation = "";
+                string reason = "Admin phát hiện ngôn từ không phù hợp";
+
+                if (currentLevel == 0)
+                    newViolation = $"Vi phạm chính sách lần 1 (Khóa tài khoản 1 ngày) - Lý do: {reason} - Thời gian: {DateTime.Now:O}";
+                else if (currentLevel == 1)
+                    newViolation = $"Vi phạm chính sách lần 2 (Khóa tài khoản 1 tuần) - Lý do: {reason} - Thời gian: {DateTime.Now:O}";
+                else
+                    newViolation = $"Vi phạm chính sách lần 3 (Tài khoản đã bị khóa) - Lý do: {reason}";
+
+                user.ChuThich = newViolation;
+                user.SecurityStamp = Guid.NewGuid().ToString();
+            }
+
+            _context.DanhGias.Remove(danhGia);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Đã xóa đánh giá và phạt tài khoản thành công." });
+        }
+
         [HttpPost("submit")]
         public async Task<IActionResult> SubmitFeedback([FromForm] DanhGiaInputDto input)
         {
-            // 1. KIỂM TRA MỖI NGƯỜI DÙNG CHỈ ĐƯỢC ĐÁNH GIÁ 1 LẦN
             var alreadyReviewed = await _context.DanhGias.AnyAsync(d => d.MaNguoiDung == input.MaNguoiDung);
             if (alreadyReviewed)
             {
                 return BadRequest("Bạn đã gửi đánh giá rồi. Mỗi tài khoản chỉ được đánh giá 1 lần duy nhất!");
             }
 
-            // 2. BỘ LỌC TỪ NGỮ & KHÓA TÀI KHOẢN
             string[] badWords = { "dm", "vcl", "fuck", "shit", "ngu", "lon" };
 
             if (!string.IsNullOrEmpty(input.BinhLuan))
@@ -92,14 +141,13 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                             newViolation = $"Vi phạm chính sách lần 3 (Tài khoản đã bị khóa) - Lý do: {reason}";
 
                         user.ChuThich = newViolation;
-                        user.SecurityStamp = Guid.NewGuid().ToString(); // Vô hiệu hóa token hiện tại
+                        user.SecurityStamp = Guid.NewGuid().ToString();
                         await _context.SaveChangesAsync();
                     }
                     return StatusCode(403, "Tài khoản của bạn đã bị khóa do sử dụng từ ngữ vi phạm quy chuẩn văn hóa!");
                 }
             }
 
-            // 3. XỬ LÝ LƯU ẢNH (Đổi tên theo format: TenGoc_NgayGio.ext)
             string? dbImagePath = null;
             if (input.HinhAnh != null)
             {
@@ -111,7 +159,7 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                     return BadRequest("Chỉ chấp nhận file định dạng ảnh (.jpg, .png, .webp, .gif).");
                 }
 
-                if (input.HinhAnh.Length > 5 * 1024 * 1024) // Giới hạn 5MB
+                if (input.HinhAnh.Length > 5 * 1024 * 1024)
                 {
                     return BadRequest("Kích thước ảnh quá lớn. Vui lòng chọn ảnh dưới 5MB.");
                 }
@@ -119,9 +167,7 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 var uploadsFolder = Path.Combine(_env.WebRootPath, "images", "feedback");
                 if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
 
-                // Format tên ảnh mới
                 string originalName = Path.GetFileNameWithoutExtension(input.HinhAnh.FileName);
-                // Xóa ký tự lạ trong tên file cũ
                 originalName = string.Join("_", originalName.Split(Path.GetInvalidFileNameChars()));
                 string timeStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
 
@@ -136,7 +182,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 dbImagePath = "/images/feedback/" + uniqueFileName;
             }
 
-            // 4. LƯU ĐÁNH GIÁ VÀO DATABASE
             var lastDG = await _context.DanhGias.OrderByDescending(d => d.MaDanhGia).FirstOrDefaultAsync();
             int nextId = 1;
             if (lastDG != null && lastDG.MaDanhGia.StartsWith("DG"))
@@ -153,7 +198,7 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 BinhLuan = input.BinhLuan,
                 NgayDanhGia = DateTime.Now,
                 MaNguoiDung = input.MaNguoiDung,
-                MaHoaDon = input.MaHoaDon // Lấy từ form (hiện tại là mã cứng HD001)
+                MaHoaDon = input.MaHoaDon
             };
 
             _context.DanhGias.Add(newDanhGia);

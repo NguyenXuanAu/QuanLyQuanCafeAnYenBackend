@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.SignalR;
 using QuanLyQuanCafeAnYenBackend.Models;
+using QuanLyQuanCafeAnYenBackend.Hubs;
 
 namespace QuanLyQuanCafeAnYenBackend.Controllers
 {
@@ -9,13 +11,17 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
     public class DonDatBanController : ControllerBase
     {
         private readonly QuanLyQuanCafeDbContext _context;
+        private readonly IHubContext<NotificationHub> _hubContext;
 
-        public DonDatBanController(QuanLyQuanCafeDbContext context)
+        public DonDatBanController(QuanLyQuanCafeDbContext context, IHubContext<NotificationHub> hubContext)
         {
             _context = context;
+            _hubContext = hubContext;
         }
 
-        // 1. API: Khách hàng gửi đơn đặt bàn mới
+        // ==============================================================
+        // 1. API: Khách hàng gửi đơn đặt bàn mới (ĐÃ KHÔI PHỤC)
+        // ==============================================================
         [HttpPost]
         public async Task<IActionResult> CreateBooking([FromBody] DonDatBan model)
         {
@@ -49,18 +55,22 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             }
         }
 
-        // 2. API: Lấy danh sách đặt bàn (Dùng cho trang Admin)
+        // ==============================================================
+        // 2. API: Lấy danh sách đặt bàn
+        // ==============================================================
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
             var data = await _context.DonDatBans
-                .Include(x => x.MaBanNavigation) // Lấy thêm thông tin bàn để admin xem
+                .Include(x => x.MaBanNavigation)
                 .OrderByDescending(x => x.ThoiGianTao)
                 .ToListAsync();
             return Ok(data);
         }
 
-        // 3. API: Lấy không gian tầng và bàn còn trống
+        // ==============================================================
+        // 3. API: Lấy không gian tầng và bàn còn trống (ĐÃ KHÔI PHỤC)
+        // ==============================================================
         [HttpGet("GetAvailableSpaces")]
         public async Task<IActionResult> GetAvailableSpaces([FromQuery] string? thoiGianDen)
         {
@@ -102,6 +112,89 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 }).ToListAsync();
 
             return Ok(data);
+        }
+
+
+        // ==============================================================
+        // 4. API MỚI CỦA ĐỒNG ĐỘI: XÁC NHẬN HOÀN THÀNH VÀ THÔNG BÁO SIGNALR
+        // ==============================================================
+        [HttpPatch("{id}/complete")]
+        public async Task<IActionResult> CompleteBooking(string id)
+        {
+            try
+            {
+                // 1. Tìm đơn đặt bàn
+                var booking = await _context.DonDatBans
+                    .Include(x => x.MaBanNavigation)
+                    .FirstOrDefaultAsync(x => x.MaDonDat == id);
+
+                if (booking == null) return NotFound(new { message = "Không tìm thấy đơn" });
+
+                // 2. Cập nhật trạng thái thành 2 (Đã hoàn thành/Đã nhận bàn)
+                booking.TrangThai = 2;
+                await _context.SaveChangesAsync();
+
+                // 3. GỬI THÔNG BÁO REAL-TIME tới tất cả nhân viên
+                string message = $"Bàn {booking.MaBanNavigation?.TenBan ?? "không tên"} đã làm xong món!";
+                await _hubContext.Clients.All.SendAsync("ReceiveOrderUpdate", new
+                {
+                    msg = message,
+                    orderId = id,
+                    tableName = booking.MaBanNavigation?.TenBan
+                });
+
+                return Ok(new { success = true, message = "Đã xác nhận hoàn thành" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = ex.Message });
+            }
+        }
+
+        // ==============================================================
+        // 5. API: LẤY SƠ ĐỒ BÀN CHO NHÂN VIÊN (Đã update trạng thái mới)
+        // ==============================================================
+        [HttpGet("floor-map/{maNhanVien}")]
+        public async Task<IActionResult> GetFloorMap(string maNhanVien)
+        {
+            // Logic gắn cứng tầng theo mã nhân viên
+            string maTang = maNhanVien switch
+            {
+                "NV001" => "T01",
+                "NV002" => "T02",
+                "NV003" => "T03",
+                "NV004" => "T04",
+                _ => "T01" // Mặc định tầng 1 nếu không khớp
+            };
+
+            // 1. Lấy danh sách bàn của tầng đó
+            var danhSachBan = await _context.Bans
+                .Where(b => b.MaTang == maTang)
+                .ToListAsync();
+
+            // 2. Lấy danh sách đơn hàng đang phục vụ (Màu Đỏ)
+            // 💥 Đã update: Trạng thái 0 (Đang phục vụ), 1 (Đã cọc), 2 (Đã thanh toán 100% nhưng chưa dọn)
+            var donHangHienTai = await _context.DonHangs
+                .Where(dh => dh.TrangThai == 0 || dh.TrangThai == 1 || dh.TrangThai == 2)
+                .Select(dh => dh.MaBan)
+                .ToListAsync();
+
+            // 3. Lấy lịch đặt bàn trong 1 tiếng tới (Màu Vàng)
+            var gioSapToi = DateTime.Now.AddHours(1);
+            var lichDatSapToi = await _context.DonDatBans
+                .Where(ddb => ddb.ThoiGianDen >= DateTime.Now && ddb.ThoiGianDen <= gioSapToi && ddb.TrangThai == 0)
+                .Select(ddb => ddb.MaBan)
+                .ToListAsync();
+
+            // Kết hợp dữ liệu để trả về cho FE
+            var result = danhSachBan.Select(b => new {
+                b.MaBan,
+                b.TenBan,
+                TrangThai = donHangHienTai.Contains(b.MaBan) ? "Occupied" :
+                            (lichDatSapToi.Contains(b.MaBan) ? "Reserved" : "Available")
+            });
+
+            return Ok(result);
         }
     }
 }

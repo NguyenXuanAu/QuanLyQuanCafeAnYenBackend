@@ -124,52 +124,8 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             return Ok(new { Success = true, Message = "Đã vô hiệu hóa toàn bộ Token cũ!" });
         }
 
-        [HttpPost("ForgotStaffPassword")]
-        public async Task<IActionResult> ForgotStaffPassword([FromBody] string account)
-        {
-            var staff = await _context.NhanViens.FirstOrDefaultAsync(s =>
-                s.SoDienThoai == account || s.Email == account || s.MaNhanVien == account);
 
-            if (staff == null || string.IsNullOrEmpty(staff.Email))
-            {
-                return NotFound(new { Message = "Không tìm thấy thông tin nhân viên hoặc Email liên kết" });
-            }
-
-            string otp = new Random().Next(100000, 999999).ToString();
-            _cache.Set($"StaffOTP_{staff.Email}", otp, TimeSpan.FromMinutes(5));
-
-            try
-            {
-                await SendEmailAsync(staff.Email, "Mã OTP phục hồi tài khoản NHÂN VIÊN - An Yên Coffee",
-                    $"<h3>Xin chào {staff.HoTen},</h3><p>Mã xác thực để đặt lại mật khẩu của bạn là: <b style='color:red; font-size:20px;'>{otp}</b></p>");
-                return Ok(new { Success = true, Message = "Mã OTP đã gửi về Email nhân viên", Email = staff.Email });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { Message = "Lỗi gửi Email: " + ex.Message });
-            }
-        }
-
-        [HttpPost("ResetStaffPassword")]
-        public async Task<IActionResult> ResetStaffPassword([FromBody] ResetPasswordDto model)
-        {
-            if (!_cache.TryGetValue($"StaffOTP_{model.Email}", out string savedOtp) || savedOtp != model.Otp)
-            {
-                return BadRequest(new { Message = "Mã OTP không chính xác hoặc đã hết hạn" });
-            }
-
-            var staff = await _context.NhanViens.FirstOrDefaultAsync(s => s.Email == model.Email);
-            if (staff == null) return NotFound();
-
-            staff.MatKhauHash = SimpleHash(model.NewPassword);
-            staff.SecurityStamp = Guid.NewGuid().ToString();
-
-            _context.NhanViens.Update(staff);
-            await _context.SaveChangesAsync();
-
-            _cache.Remove($"StaffOTP_{model.Email}");
-            return Ok(new { Success = true, Message = "Đặt lại mật khẩu thành công!" });
-        }
+        
 
         private async Task SendEmailAsync(string toEmail, string subject, string body)
         {

@@ -14,7 +14,12 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         {
             _context = context;
         }
-
+        [HttpGet("count")]
+        public async Task<IActionResult> GetCount()
+        {
+            var total = await _context.YeuCauNhacs.CountAsync();
+            return Ok(total);
+        }
         // =======================
         // GET: api/YeuCauNhac
         // =======================
@@ -28,7 +33,32 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
 
             return Ok(data);
         }
+        [HttpGet("list/{maNguoiDung}")]
+        public async Task<IActionResult> GetList(string maNguoiDung)
+        {
+            var data = await _context.YeuCauNhacs
+                .Include(x => x.MaBanNavigation)
+                .Select(n => new
+                {
+                    n.MaYeuCau,
+                    n.TenBaiHat,
+                    n.CaSi,
+                    n.SoLuotBinhChon,
+                    n.DaPhat,
+                    n.MaBan,
+                    TenBan = n.MaBanNavigation.TenBan,
+                    n.NguoiYeuCau,
+                    n.MaNguoiDung,
 
+                    DaVote = _context.NhacVote
+                        .Any(v => v.MaYeuCau == n.MaYeuCau
+                               && v.MaNguoiDung == maNguoiDung)
+                })
+                .OrderByDescending(x => x.SoLuotBinhChon)
+                .ToListAsync();
+
+            return Ok(data);
+        }
         // =======================
         // GET: api/YeuCauNhac/YC001
         // =======================
@@ -68,19 +98,24 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         // PUT: api/YeuCauNhac/YC001
         // =======================
         [HttpPut("{maYeuCau}")]
-        public async Task<IActionResult> Update(string maYeuCau, [FromBody] YeuCauNhac model)
+        public async Task<IActionResult> Update(string maYeuCau, [FromBody] YeuCauNhac dto)
         {
-            if (maYeuCau != model.MaYeuCau)
-                return BadRequest("Mã yêu cầu không khớp");
+            var item = await _context.YeuCauNhacs
+                .FirstOrDefaultAsync(x => x.MaYeuCau == maYeuCau);
 
-            var exists = await _context.YeuCauNhacs.AnyAsync(x => x.MaYeuCau == maYeuCau);
-            if (!exists)
-                return NotFound("Không tìm thấy yêu cầu nhạc");
+            if (item == null)
+                return NotFound();
 
-            _context.Entry(model).State = EntityState.Modified;
+            item.TenBaiHat = dto.TenBaiHat;
+            item.CaSi = dto.CaSi;
+            item.LinkVideo = dto.LinkVideo;
+            item.MaBan = dto.MaBan;
+            item.NguoiYeuCau = dto.NguoiYeuCau;
+            item.DaPhat = dto.DaPhat;
+
             await _context.SaveChangesAsync();
 
-            return Ok(model);
+            return Ok(item);
         }
 
         // =======================
@@ -104,23 +139,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         // =======================
         // POST: api/YeuCauNhac/BinhChon/YC001
         // =======================
-        [HttpPost("BinhChon/{maYeuCau}")]
-        public async Task<IActionResult> BinhChon(string maYeuCau)
-        {
-            var item = await _context.YeuCauNhacs
-                .FirstOrDefaultAsync(x => x.MaYeuCau == maYeuCau);
-
-            if (item == null)
-                return NotFound("Không tìm thấy yêu cầu nhạc");
-
-            item.SoLuotBinhChon += 1;
-            await _context.SaveChangesAsync();
-
-            return Ok(new
-            {
-                item.MaYeuCau,
-                item.SoLuotBinhChon
-            });
-        }
+        
     }
 }
