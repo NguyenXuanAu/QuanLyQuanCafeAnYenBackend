@@ -69,21 +69,18 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         }
 
         // ==============================================================
-        // 3. API: Lấy không gian tầng và bàn còn trống (ĐÃ KHÔI PHỤC)
+        // 3. API: Lấy không gian tầng và bàn còn trống (ĐÃ FIX LỖI CS1061 CHUẨN)
         // ==============================================================
         [HttpGet("GetAvailableSpaces")]
         public async Task<IActionResult> GetAvailableSpaces([FromQuery] string? thoiGianDen)
         {
             DateTime? parsedTime = null;
-
-            // Nếu Frontend có gửi giờ lên, thì mới kiểm tra
             if (!string.IsNullOrEmpty(thoiGianDen) && DateTime.TryParse(thoiGianDen, out DateTime temp))
             {
                 parsedTime = temp;
             }
 
-            // Thời gian ngồi dự kiến mặc định (Ví dụ: 60 phút)
-            int thoiGianNgoiMoi = 60;
+            int thoiGianNgoiMoi = 60; // Khách mới dự kiến ngồi 60p
 
             var data = await _context.Tangs
                 .Select(t => new {
@@ -92,22 +89,30 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                     t.LaKhuYenTinh,
                     t.MoTa,
                     Bans = _context.Bans
-                        .Where(b => b.MaTang == t.MaTang) // Lấy hết tất cả bàn, không lọc TrangThai = 0 nữa
+                        .Where(b => b.MaTang == t.MaTang)
                         .Select(b => new {
                             b.MaBan,
                             b.TenBan,
                             b.SoGhe,
                             b.LoaiBan,
                             b.GanCuaSo,
-                            // THUẬT TOÁN KIỂM TRA TRÙNG GIỜ
-                            IsAvailable = parsedTime == null ? true : !_context.DonDatBans.Any(d =>
-                                d.MaBan == b.MaBan &&
-                                d.TrangThai < 3 && // Bỏ qua các đơn đã Hủy (Trạng thái 3)
-                                                   // Bắt đầu trùng: Giờ cũ đến TRƯỚC khi khách mới về
-                                d.ThoiGianDen < parsedTime.Value.AddMinutes(thoiGianNgoiMoi) &&
-                                // Kết thúc trùng: Giờ cũ về SAU khi khách mới đến
-                                d.ThoiGianDen.AddMinutes(d.ThoiGianNgoiDuKien ?? 60) > parsedTime.Value
-                            )
+                            IsAvailable = parsedTime == null ? true :
+                                // ĐIỀU KIỆN 1: Bàn KHÔNG trùng với Lịch Đặt Trước 
+                                // (ThoiGianDen là DateTime thường nên KHÔNG CẦN .Value)
+                                !_context.DonDatBans.Any(d =>
+                                    d.MaBan == b.MaBan && d.TrangThai < 3 &&
+                                    d.ThoiGianDen < parsedTime.Value.AddMinutes(thoiGianNgoiMoi) &&
+                                    d.ThoiGianDen.AddMinutes(d.ThoiGianNgoiDuKien ?? 60) > parsedTime.Value
+                                )
+                                &&
+                                // ĐIỀU KIỆN 2: Bàn KHÔNG bị chiếm bởi khách vãng lai 
+                                // (ThoiGianTao là DateTime? nên BẮT BUỘC PHẢI CÓ .Value)
+                                !_context.DonHangs.Any(dh =>
+                                    dh.MaBan == b.MaBan &&
+                                    (dh.TrangThai == 0 || dh.TrangThai == 1 || dh.TrangThai == 2) &&
+                                    dh.ThoiGianTao != null && // Bỏ qua đơn rỗng
+                                    dh.ThoiGianTao.Value.AddMinutes(120) > parsedTime.Value
+                                )
                         }).ToList()
                 }).ToListAsync();
 
@@ -152,41 +157,40 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         }
 
         // ==============================================================
-        // 5. API: LẤY SƠ ĐỒ BÀN CHO NHÂN VIÊN (Đã update trạng thái mới)
+        // 5. API: LẤY SƠ ĐỒ BÀN CHO NHÂN VIÊN (Đã Fix lỗi quá giờ hóa Xanh)
         // ==============================================================
         [HttpGet("floor-map/{maNhanVien}")]
         public async Task<IActionResult> GetFloorMap(string maNhanVien)
         {
-            // Logic gắn cứng tầng theo mã nhân viên
             string maTang = maNhanVien switch
             {
                 "NV001" => "T01",
                 "NV002" => "T02",
                 "NV003" => "T03",
                 "NV004" => "T04",
-                _ => "T01" // Mặc định tầng 1 nếu không khớp
+                _ => "T01"
             };
 
-            // 1. Lấy danh sách bàn của tầng đó
-            var danhSachBan = await _context.Bans
-                .Where(b => b.MaTang == maTang)
-                .ToListAsync();
+            var danhSachBan = await _context.Bans.Where(b => b.MaTang == maTang).ToListAsync();
 
-            // 2. Lấy danh sách đơn hàng đang phục vụ (Màu Đỏ)
-            // 💥 Đã update: Trạng thái 0 (Đang phục vụ), 1 (Đã cọc), 2 (Đã thanh toán 100% nhưng chưa dọn)
+            // 1. Lấy khách ĐANG NGỒI THẬT (Màu Đỏ)
             var donHangHienTai = await _context.DonHangs
                 .Where(dh => dh.TrangThai == 0 || dh.TrangThai == 1 || dh.TrangThai == 2)
                 .Select(dh => dh.MaBan)
                 .ToListAsync();
 
-            // 3. Lấy lịch đặt bàn trong 1 tiếng tới (Màu Vàng)
-            var gioSapToi = DateTime.Now.AddHours(1);
+            // 2. Lấy khách ĐẶT TRƯỚC (Màu Vàng) 
+            // 💥 FIX LỖI: Cho phép khách đến muộn 30 phút. Hiển thị đơn trong vòng 2 tiếng tới.
+            var gioHienTai = DateTime.Now;
+            var gioChoPhepTre = gioHienTai.AddMinutes(-30);
+            var gioSapToi = gioHienTai.AddHours(2);
+
             var lichDatSapToi = await _context.DonDatBans
-                .Where(ddb => ddb.ThoiGianDen >= DateTime.Now && ddb.ThoiGianDen <= gioSapToi && ddb.TrangThai == 0)
+                .Where(ddb => ddb.ThoiGianDen >= gioChoPhepTre && ddb.ThoiGianDen <= gioSapToi && ddb.TrangThai < 3)
                 .Select(ddb => ddb.MaBan)
                 .ToListAsync();
 
-            // Kết hợp dữ liệu để trả về cho FE
+            // Kết hợp dữ liệu (Thứ tự ưu tiên: Đang ngồi -> Đặt trước -> Trống)
             var result = danhSachBan.Select(b => new {
                 b.MaBan,
                 b.TenBan,

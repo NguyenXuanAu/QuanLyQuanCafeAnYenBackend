@@ -245,19 +245,35 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         }
 
         // ==============================================================
-        // 7. API GIẢI PHÓNG BÀN (Chuyển sang Trạng thái 4)
+        // 7. API GIẢI PHÓNG BÀN (Chuyển sang Trạng thái 4 & Đồng bộ Đơn Đặt Bàn)
         // ==============================================================
         [HttpPost("GiaiPhongBan/{maDonHang}")]
         public async Task<IActionResult> GiaiPhongBan(string maDonHang)
         {
+            // 1. Tìm đơn hàng (Hóa đơn)
             var donHang = await _context.DonHangs.FirstOrDefaultAsync(d => d.MaDonHang == maDonHang);
             if (donHang == null) return NotFound(new { success = false, message = "Không tìm thấy đơn hàng" });
 
-            // 4: Khách đã về, dọn bàn xong, hoàn tất 100% vòng đời
+            // 2. Chuyển trạng thái hóa đơn sang 4 (Hoàn tất)
             donHang.TrangThai = 4;
 
+            // 3. 💥 LOGIC MỚI: TÌM VÀ ĐỒNG BỘ CHO ĐƠN ĐẶT BÀN (NẾU CÓ)
+            // Kiểm tra xem đơn hàng này có xuất phát từ việc khách đặt bàn online không
+            if (!string.IsNullOrEmpty(donHang.MaDonDat))
+            {
+                // Tìm lại cái lịch đặt bàn gốc đó
+                var donDatBan = await _context.DonDatBans.FirstOrDefaultAsync(d => d.MaDonDat == donHang.MaDonDat);
+
+                if (donDatBan != null)
+                {
+                    // Chuyển luôn Lịch đặt bàn sang 4 (Để nhả chỗ cho khách mới đặt Online)
+                    donDatBan.TrangThai = 4;
+                }
+            }
+
+            // 4. Lưu tất cả thay đổi xuống Database
             await _context.SaveChangesAsync();
-            return Ok(new { success = true, message = "Đã dọn bàn và giải phóng thành công!" });
+            return Ok(new { success = true, message = "Đã dọn bàn và nhả chỗ thành công!" });
         }
 
         // ==============================================================

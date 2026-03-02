@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.SignalR; // Thêm thư viện SignalR
 using QuanLyQuanCafeAnYenBackend.Models;
+using QuanLyQuanCafeAnYenBackend.Hubs; // Thêm Hubs
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -11,14 +13,17 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
     public class PhaCheController : ControllerBase
     {
         private readonly QuanLyQuanCafeDbContext _context;
+        private readonly IHubContext<NotificationHub> _hubContext; // Khai báo Hub
 
-        public PhaCheController(QuanLyQuanCafeDbContext context)
+        // Tiêm Hub vào Constructor
+        public PhaCheController(QuanLyQuanCafeDbContext context, IHubContext<NotificationHub> hubContext)
         {
             _context = context;
+            _hubContext = hubContext;
         }
 
         // ==============================================================
-        // 1. API LẤY DANH SÁCH "ĐỢT" PHA CHẾ (Đã dùng LINQ JOIN để sửa lỗi Model)
+        // 1. API LẤY DANH SÁCH "ĐỢT" PHA CHẾ (Giữ nguyên của bạn)
         // ==============================================================
         [HttpGet("DanhSach")]
         public async Task<IActionResult> GetDanhSachPhaChe()
@@ -26,21 +31,17 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             try
             {
                 var baNgayTruoc = DateTime.Now.AddDays(-1);
-                // Dùng cú pháp JOIN rõ ràng để kết nối 3 bảng: ChiTiet, DonHang, MonAn
                 var danhSachBatches = await (from ct in _context.ChiTietDonHangs
                                              join dh in _context.DonHangs on ct.MaDonHang equals dh.MaDonHang
                                              join ma in _context.MonAns on ct.MaMonAn equals ma.MaMonAn
                                              where ct.TrangThaiBep >= 0 && ct.TrangThaiBep <= 3
-                                                && dh.ThoiGianTao >= baNgayTruoc // Chỉ lấy món chưa bưng
-                                             // Nhóm các món theo Đơn Hàng và Trạng Thái
+                                                && dh.ThoiGianTao >= baNgayTruoc
                                              group new { ct, ma } by new { dh.MaDonHang, ct.TrangThaiBep, dh.MaBan, dh.ThoiGianTao, dh.GhiChu } into g
                                              select new
                                              {
-                                                 // 💥 BÍ QUYẾT: Tạo Mã Ảo (Ví dụ: DH001_0)
                                                  MaDonHang = g.Key.MaDonHang + "_" + g.Key.TrangThaiBep,
                                                  MaBan = g.Key.MaBan,
                                                  ThoiGianTao = g.Key.ThoiGianTao,
-                                                 // Dịch TrangThaiBep (0->3) sang LoaiDonHang (1->4)
                                                  LoaiDonHang = g.Key.TrangThaiBep + 1,
                                                  GhiChu = g.Key.GhiChu,
                                                  ChiTiet = g.Select(x => new
@@ -55,7 +56,6 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                                                  }).ToList()
                                              }).ToListAsync();
 
-                // Lấy tên bàn
                 var dsBan = await _context.Bans.ToDictionaryAsync(b => b.MaBan, b => b.TenBan);
                 var finalResult = danhSachBatches.Select(b => new {
                     b.MaDonHang,
@@ -76,35 +76,55 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         }
 
         // ==============================================================
-        // 2. API CẬP NHẬT TRẠNG THÁI CỦA 1 "ĐỢT" MÓN ĂN
+        // 2. API CẬP NHẬT TRẠNG THÁI (ĐÃ FIX LỖI INCLUDE & THÊM SIGNALR)
         // ==============================================================
         [HttpPost("CapNhatTrangThai/{maVirtual}")]
         public async Task<IActionResult> CapNhatTrangThai(string maVirtual, [FromBody] int trangThaiMoiFE)
         {
             try
             {
-                // Tách Mã Ảo "DH001_0" thành "DH001" và "0"
                 var parts = maVirtual.Split('_');
                 if (parts.Length != 2) return BadRequest(new { success = false, message = "Mã đơn không hợp lệ" });
 
                 string maDonHangGoc = parts[0];
                 int trangThaiBepCu = int.Parse(parts[1]);
-                int trangThaiBepMoi = trangThaiMoiFE - 1; // Dịch ngược từ 1->4 về 0->3
+                int trangThaiBepMoi = trangThaiMoiFE - 1;
 
-                // Chỉ tìm và cập nhật CÁC MÓN TRONG ĐỢT ĐÓ, không đụng tới món khác của đơn hàng
+                // 1. Chỉ lấy danh sách món để cập nhật (Không dùng Include nữa để né lỗi CS1061)
                 var listMonAnTrongDot = await _context.ChiTietDonHangs
                     .Where(ct => ct.MaDonHang == maDonHangGoc && ct.TrangThaiBep == trangThaiBepCu)
                     .ToListAsync();
 
                 if (!listMonAnTrongDot.Any())
-                    return NotFound(new { success = false, message = "Không tìm thấy món ăn nào trong đợt này. Có thể đã được cập nhật bởi người khác!" });
+                    return NotFound(new { success = false, message = "Không tìm thấy món." });
 
+                // 2. Lấy riêng thông tin Đơn Hàng Gốc để dò ra tên Bàn
+                var donHangGoc = await _context.DonHangs.FirstOrDefaultAsync(dh => dh.MaDonHang == maDonHangGoc);
+                string maBan = donHangGoc?.MaBan ?? "";
+
+                var ban = await _context.Bans.FirstOrDefaultAsync(b => b.MaBan == maBan);
+                string tenBan = ban != null ? ban.TenBan : "Mang đi";
+
+                // 3. Cập nhật trạng thái
                 foreach (var item in listMonAnTrongDot)
                 {
                     item.TrangThaiBep = trangThaiBepMoi;
                 }
 
                 await _context.SaveChangesAsync();
+
+                // 💥 BẮN THÔNG BÁO REAL-TIME CHO NHÂN VIÊN KHI BẾP LÀM XONG (Kéo sang cột 4)
+                if (trangThaiMoiFE == 4)
+                {
+                    string message = $"Bếp đã làm xong món của bàn {tenBan}. Vui lòng bưng lên cho khách!";
+                    await _hubContext.Clients.All.SendAsync("ReceiveOrderUpdate", new
+                    {
+                        msg = message,
+                        orderId = maDonHangGoc,
+                        tableName = tenBan
+                    });
+                }
+
                 return Ok(new { success = true, message = "Cập nhật tiến độ thành công!" });
             }
             catch (Exception ex)
