@@ -9,4 +9,5 @@
     public string? MoTa { get; set; }
 
     public string? ChuThich { get; set; }
+    public IFormFile? File { get; set; }
 }
