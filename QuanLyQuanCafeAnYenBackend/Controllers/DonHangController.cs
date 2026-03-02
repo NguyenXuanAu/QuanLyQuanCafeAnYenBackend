@@ -197,15 +197,27 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
 
 
         // ==============================================================
-        // (ĐÃ CẬP NHẬT) API LẤY ĐƠN HÀNG HIỆN TẠI (Lấy cả trạng thái 0, 1, 2)
+        // (ĐÃ CẬP NHẬT) API LẤY ĐƠN HÀNG HIỆN TẠI (Thêm logic lấy Tiền Cọc)
         // ==============================================================
         [HttpGet("table/{maBan}/active")]
         public async Task<IActionResult> GetActiveOrderByTable(string maBan)
         {
-            // Lấy đơn hàng chưa cọc (0), đã cọc (1) HOẶC đã thanh toán nhưng chưa về (2)
+            // 1. Lấy đơn hàng chưa cọc (0), đã cọc (1) HOẶC đã thanh toán nhưng chưa về (2)
             var donHang = await _context.DonHangs.FirstOrDefaultAsync(d => d.MaBan == maBan && (d.TrangThai == 0 || d.TrangThai == 1 || d.TrangThai == 2));
             if (donHang == null) return Ok(new { success = false, message = "Bàn trống." });
 
+            // 2. 💥 TÌM SỐ TIỀN KHÁCH ĐÃ CỌC (Nếu đơn này đến từ đặt bàn online)
+            decimal tienDaCoc = 0;
+            if (!string.IsNullOrEmpty(donHang.MaDonDat))
+            {
+                var donDatBan = await _context.DonDatBans.FirstOrDefaultAsync(d => d.MaDonDat == donHang.MaDonDat);
+                if (donDatBan != null)
+                {
+                    tienDaCoc = donDatBan.TienCoc ?? 0;
+                }
+            }
+
+            // 3. Lấy danh sách món ăn
             var items = await _context.ChiTietDonHangs
                 .Where(c => c.MaDonHang == donHang.MaDonHang)
                 .Join(_context.MonAns, c => c.MaMonAn, m => m.MaMonAn, (c, m) => new {
@@ -221,9 +233,10 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             return Ok(new
             {
                 success = true,
-                maDonHang = donHang.MaDonHang, // Truyền mã đơn hàng xuống FE
-                trangThaiDonHang = donHang.TrangThai, // Truyền trạng thái hiện tại (0, 1, 2)
+                maDonHang = donHang.MaDonHang,
+                trangThaiDonHang = donHang.TrangThai,
                 tongTienGoc = items.Sum(i => i.SoLuong * i.GiaTaiThoiDiem),
+                tienDaCoc = tienDaCoc, // 💥 TRẢ VỀ TIỀN CỌC CHO FRONTEND
                 items = items
             });
         }

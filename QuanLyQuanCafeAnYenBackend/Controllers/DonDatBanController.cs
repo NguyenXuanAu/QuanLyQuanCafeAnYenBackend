@@ -157,7 +157,7 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         }
 
         // ==============================================================
-        // 5. API: LẤY SƠ ĐỒ BÀN CHO NHÂN VIÊN (Đã Fix lỗi quá giờ hóa Xanh)
+        // 5. API: LẤY SƠ ĐỒ BÀN CHO NHÂN VIÊN (Đã tách riêng bàn Đã Thanh Toán)
         // ==============================================================
         [HttpGet("floor-map/{maNhanVien}")]
         public async Task<IActionResult> GetFloorMap(string maNhanVien)
@@ -173,14 +173,19 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
 
             var danhSachBan = await _context.Bans.Where(b => b.MaTang == maTang).ToListAsync();
 
-            // 1. Lấy khách ĐANG NGỒI THẬT (Màu Đỏ)
-            var donHangHienTai = await _context.DonHangs
-                .Where(dh => dh.TrangThai == 0 || dh.TrangThai == 1 || dh.TrangThai == 2)
+            // 1. Nhóm ĐANG NGỒI THẬT (Chưa thanh toán hoặc mới Cọc - Màu Đỏ)
+            var donHangChuaThanhToan = await _context.DonHangs
+                .Where(dh => dh.TrangThai == 0 || dh.TrangThai == 1)
                 .Select(dh => dh.MaBan)
                 .ToListAsync();
 
-            // 2. Lấy khách ĐẶT TRƯỚC (Màu Vàng) 
-            // 💥 FIX LỖI: Cho phép khách đến muộn 30 phút. Hiển thị đơn trong vòng 2 tiếng tới.
+            // 1.5. Nhóm ĐÃ THANH TOÁN (Nhưng khách chưa về - Màu Xanh Dương)
+            var donHangDaThanhToan = await _context.DonHangs
+                .Where(dh => dh.TrangThai == 2)
+                .Select(dh => dh.MaBan)
+                .ToListAsync();
+
+            // 2. Nhóm ĐẶT TRƯỚC (Màu Vàng) 
             var gioHienTai = DateTime.Now;
             var gioChoPhepTre = gioHienTai.AddMinutes(-30);
             var gioSapToi = gioHienTai.AddHours(2);
@@ -190,12 +195,13 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 .Select(ddb => ddb.MaBan)
                 .ToListAsync();
 
-            // Kết hợp dữ liệu (Thứ tự ưu tiên: Đang ngồi -> Đặt trước -> Trống)
+            // 💥 KẾT HỢP DỮ LIỆU: Ưu tiên Đang ngồi (Occupied) -> Đã thanh toán (Paid) -> Đặt trước (Reserved) -> Trống
             var result = danhSachBan.Select(b => new {
                 b.MaBan,
                 b.TenBan,
-                TrangThai = donHangHienTai.Contains(b.MaBan) ? "Occupied" :
-                            (lichDatSapToi.Contains(b.MaBan) ? "Reserved" : "Available")
+                TrangThai = donHangChuaThanhToan.Contains(b.MaBan) ? "Occupied" :
+                            (donHangDaThanhToan.Contains(b.MaBan) ? "Paid" :
+                            (lichDatSapToi.Contains(b.MaBan) ? "Reserved" : "Available"))
             });
 
             return Ok(result);
