@@ -197,15 +197,15 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
 
 
         // ==============================================================
-        // 4. API LẤY ĐƠN HÀNG HIỆN TẠI CỦA BÀN (Dùng để xem khách đang uống gì)
+        // (ĐÃ CẬP NHẬT) API LẤY ĐƠN HÀNG HIỆN TẠI (Lấy cả trạng thái 0, 1, 2)
         // ==============================================================
         [HttpGet("table/{maBan}/active")]
         public async Task<IActionResult> GetActiveOrderByTable(string maBan)
         {
-            var donHang = await _context.DonHangs.FirstOrDefaultAsync(d => d.MaBan == maBan && d.TrangThai == 0);
+            // Lấy đơn hàng chưa cọc (0), đã cọc (1) HOẶC đã thanh toán nhưng chưa về (2)
+            var donHang = await _context.DonHangs.FirstOrDefaultAsync(d => d.MaBan == maBan && (d.TrangThai == 0 || d.TrangThai == 1 || d.TrangThai == 2));
             if (donHang == null) return Ok(new { success = false, message = "Bàn trống." });
 
-            // Kết bảng ChiTiet và MonAn để lấy cả tên món
             var items = await _context.ChiTietDonHangs
                 .Where(c => c.MaDonHang == donHang.MaDonHang)
                 .Join(_context.MonAns, c => c.MaMonAn, m => m.MaMonAn, (c, m) => new {
@@ -221,9 +221,43 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             return Ok(new
             {
                 success = true,
+                maDonHang = donHang.MaDonHang, // Truyền mã đơn hàng xuống FE
+                trangThaiDonHang = donHang.TrangThai, // Truyền trạng thái hiện tại (0, 1, 2)
                 tongTienGoc = items.Sum(i => i.SoLuong * i.GiaTaiThoiDiem),
                 items = items
             });
+        }
+
+        // ==============================================================
+        // 6. API XÁC NHẬN THANH TOÁN (Chuyển sang Trạng thái 2)
+        // ==============================================================
+        [HttpPost("ThanhToan/{maDonHang}")]
+        public async Task<IActionResult> ThanhToan(string maDonHang)
+        {
+            var donHang = await _context.DonHangs.FirstOrDefaultAsync(d => d.MaDonHang == maDonHang);
+            if (donHang == null) return NotFound(new { success = false, message = "Không tìm thấy đơn hàng" });
+
+            // 2: Đã thanh toán 100% (Thu đủ tiền)
+            donHang.TrangThai = 2;
+
+            await _context.SaveChangesAsync();
+            return Ok(new { success = true, message = "Thanh toán thành công! Khách vẫn đang ngồi tại bàn." });
+        }
+
+        // ==============================================================
+        // 7. API GIẢI PHÓNG BÀN (Chuyển sang Trạng thái 4)
+        // ==============================================================
+        [HttpPost("GiaiPhongBan/{maDonHang}")]
+        public async Task<IActionResult> GiaiPhongBan(string maDonHang)
+        {
+            var donHang = await _context.DonHangs.FirstOrDefaultAsync(d => d.MaDonHang == maDonHang);
+            if (donHang == null) return NotFound(new { success = false, message = "Không tìm thấy đơn hàng" });
+
+            // 4: Khách đã về, dọn bàn xong, hoàn tất 100% vòng đời
+            donHang.TrangThai = 4;
+
+            await _context.SaveChangesAsync();
+            return Ok(new { success = true, message = "Đã dọn bàn và giải phóng thành công!" });
         }
 
         // ==============================================================
@@ -238,8 +272,8 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // KIỂM TRA: Bàn này đang trống hay đã có khách?
-                var donHang = await _context.DonHangs.FirstOrDefaultAsync(d => d.MaBan == request.MaBan && d.TrangThai == 0);
+                // KIỂM TRA: Bàn này đang trống hay đã có khách? (Lấy cả khách đang nợ, đã cọc, hoặc đã thanh toán 100%)
+                var donHang = await _context.DonHangs.FirstOrDefaultAsync(d => d.MaBan == request.MaBan && (d.TrangThai == 0 || d.TrangThai == 1 || d.TrangThai == 2));
                 string maDonHang = "";
 
                 if (donHang == null)
@@ -262,6 +296,12 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 {
                     // Trạng thái 2: BÀN CÓ KHÁCH -> Dùng lại mã Đơn Hàng Cũ
                     maDonHang = donHang.MaDonHang;
+
+                    // 💥 NẾU KHÁCH ĐÃ THANH TOÁN 100% (2) MÀ GỌI THÊM MÓN -> ĐƯA VỀ LẠI TRẠNG THÁI CHƯA THANH TOÁN (0)
+                    if (donHang.TrangThai == 2)
+                    {
+                        donHang.TrangThai = 0;
+                    }
                 }
 
                 // Thêm các món MỚI vào Chi Tiết Đơn Hàng
