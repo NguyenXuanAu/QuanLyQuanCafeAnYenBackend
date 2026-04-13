@@ -132,5 +132,90 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 return StatusCode(500, new { success = false, message = "Lỗi hệ thống: " + ex.Message });
             }
         }
+
+        // ==============================================================
+        // 3. API BẾP HỦY 1 MÓN CỤ THỂ (HẾT NGUYÊN LIỆU)
+        // ==============================================================
+        [HttpPost("HuyMon/{maChiTiet}")]
+        public async Task<IActionResult> HuyMon(string maChiTiet)
+        {
+            try
+            {
+                // 1. Tìm đúng cái món đó trong đợt order
+                var chiTiet = await _context.ChiTietDonHangs.FirstOrDefaultAsync(ct => ct.MaChiTiet == maChiTiet);
+                if (chiTiet == null) return NotFound(new { success = false, message = "Không tìm thấy món này." });
+
+                // 2. Chuyển trạng thái thành -1 (Đã hủy). Việc này giúp hàm tính tiền tự động bỏ qua món này.
+                chiTiet.TrangThaiBep = -1;
+
+                // 3. Lấy thông tin Tên món và Tên bàn để phát loa thông báo (Né lỗi CS1061)
+                var monAn = await _context.MonAns.FirstOrDefaultAsync(m => m.MaMonAn == chiTiet.MaMonAn);
+                string tenMonAn = monAn != null ? monAn.TenMonAn : "Món ăn";
+
+                var donHang = await _context.DonHangs.FirstOrDefaultAsync(dh => dh.MaDonHang == chiTiet.MaDonHang);
+                string tenBan = "Mang đi";
+                if (donHang != null && !string.IsNullOrEmpty(donHang.MaBan))
+                {
+                    var ban = await _context.Bans.FirstOrDefaultAsync(b => b.MaBan == donHang.MaBan);
+                    if (ban != null) tenBan = ban.TenBan;
+                }
+
+                await _context.SaveChangesAsync();
+
+                // 4. Bắn SignalR hỏa tốc cho Nhân viên
+                await _hubContext.Clients.All.SendAsync("ReceiveOrderUpdate", new
+                {
+                    msg = $"🛑 Bếp đã HỦY món [{tenMonAn}] của bàn [{tenBan}] do hết nguyên liệu. Nhờ bạn báo khách nhé!",
+                    orderId = chiTiet.MaDonHang,
+                    tableName = tenBan
+                });
+
+                return Ok(new { success = true, message = "Đã hủy món và báo cho nhân viên!" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "Lỗi hệ thống: " + ex.Message });
+            }
+        }
+
+        // ==============================================================
+        // 4. API BẾP BÁO LÀM LÂU (KHÔNG SỬA DATA, CHỈ PHÁT LOA)
+        // ==============================================================
+        [HttpPost("BaoLau/{maChiTiet}")]
+        public async Task<IActionResult> BaoLau(string maChiTiet)
+        {
+            try
+            {
+                // 1. Tìm món
+                var chiTiet = await _context.ChiTietDonHangs.FirstOrDefaultAsync(ct => ct.MaChiTiet == maChiTiet);
+                if (chiTiet == null) return NotFound(new { success = false, message = "Không tìm thấy món này." });
+
+                // 2. Lấy thông tin (Tương tự như trên)
+                var monAn = await _context.MonAns.FirstOrDefaultAsync(m => m.MaMonAn == chiTiet.MaMonAn);
+                string tenMonAn = monAn != null ? monAn.TenMonAn : "Món ăn";
+
+                var donHang = await _context.DonHangs.FirstOrDefaultAsync(dh => dh.MaDonHang == chiTiet.MaDonHang);
+                string tenBan = "Mang đi";
+                if (donHang != null && !string.IsNullOrEmpty(donHang.MaBan))
+                {
+                    var ban = await _context.Bans.FirstOrDefaultAsync(b => b.MaBan == donHang.MaBan);
+                    if (ban != null) tenBan = ban.TenBan;
+                }
+
+                // 3. Bắn SignalR (Không cần SaveChanges vì không thay đổi Data)
+                await _hubContext.Clients.All.SendAsync("ReceiveOrderUpdate", new
+                {
+                    msg = $"⏳ Món [{tenMonAn}] của bàn [{tenBan}] sẽ ra hơi chậm. Nhờ bạn ra rót trà và xoa dịu khách nhé!",
+                    orderId = chiTiet.MaDonHang,
+                    tableName = tenBan
+                });
+
+                return Ok(new { success = true, message = "Đã gửi thông báo Delay thành công!" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "Lỗi hệ thống: " + ex.Message });
+            }
+        }
     }
 }

@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using QuanLyQuanCafeAnYenBackend.Models;
+using Microsoft.AspNetCore.SignalR; 
+using QuanLyQuanCafeAnYenBackend.Hubs; 
 
 namespace QuanLyQuanCafeAnYenBackend.Controllers
 {
@@ -9,10 +11,12 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
     public class DonHangController : ControllerBase
     {
         private readonly QuanLyQuanCafeDbContext _context;
+        private readonly IHubContext<NotificationHub> _hubContext;
 
-        public DonHangController(QuanLyQuanCafeDbContext context)
+        public DonHangController(QuanLyQuanCafeDbContext context, IHubContext<NotificationHub> hubContext)
         {
             _context = context;
+            _hubContext = hubContext;
         }
 
 
@@ -94,6 +98,7 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 return BadRequest(new { success = false, message = "Giỏ hàng trống!" });
             }
 
+            // Giao dịch (Transaction): Đảm bảo NẾU CÓ LỖI XẢY RA, mọi thay đổi (đặc biệt là điểm của khách) sẽ tự động hoàn tác!
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
@@ -105,17 +110,60 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                 }
 
                 // =========================================================
-                // 🚀 TỰ ĐỘNG PHÂN CÔNG NHÂN VIÊN THEO TẦNG
+                // 💥 2. XỬ LÝ TRỪ ĐIỂM LOYALTY (Nếu khách có dùng điểm)
+                // =========================================================
+                decimal tienGiamGia = 0;
+                if (dto.SoDiemMuonDung > 0)
+                {
+                    // Ưu tiên lấy mã người dùng từ Đơn Đặt Bàn, nếu rỗng thì lấy từ DTO
+                    string maKhachHang = donDatBan.MaNguoiDung ?? dto.MaNguoiDung;
+
+                    if (string.IsNullOrEmpty(maKhachHang))
+                    {
+                        return BadRequest(new { success = false, message = "Không xác định được tài khoản để trừ điểm." });
+                    }
+
+                    // Lấy thông tin khách hàng để kiểm tra
+                    var khachHang = await _context.NguoiDungs.FirstOrDefaultAsync(nd => nd.MaNguoiDung == maKhachHang);
+                    if (khachHang == null || khachHang.DiemTichLuy < dto.SoDiemMuonDung)
+                    {
+                        return BadRequest(new { success = false, message = "Điểm tích lũy không đủ hoặc tài khoản không hợp lệ!" });
+                    }
+
+                    // Tính tiền giảm giá (1 điểm = 1000 VNĐ)
+                    tienGiamGia = dto.SoDiemMuonDung * 1000;
+
+                    // Trừ điểm trực tiếp vào Profile khách hàng
+                    khachHang.DiemTichLuy -= dto.SoDiemMuonDung;
+
+                    // Lưu vết vào Bảng Lịch Sử Điểm để Kế toán đối soát
+                    string maGiaoDich = "SD" + DateTime.Now.Ticks.ToString().Substring(8, 8);
+                    var lichSu = new LichSuDiem
+                    {
+                        MaGiaoDich = maGiaoDich,
+                        LoaiGiaoDich = 0, // 0: Dùng điểm, 1: Cộng điểm
+                        SoDiem = dto.SoDiemMuonDung,
+                        MoTa = $"Dùng điểm giảm giá cho đơn đặt bàn {donDatBan.MaDonDat}",
+                        ThoiGian = DateTime.Now,
+                        MaNguoiDung = khachHang.MaNguoiDung
+                    };
+                    _context.LichSuDiems.Add(lichSu);
+
+                    // GHI CHÚ THÔNG MINH (Báo cho nhân viên biết bill bị hụt tiền là do dùng điểm)
+                    string noteGiamGia = $"[Đã dùng {dto.SoDiemMuonDung} điểm: -{tienGiamGia:N0}đ]";
+                    dto.GhiChu = string.IsNullOrEmpty(dto.GhiChu) ? noteGiamGia : dto.GhiChu + $" | {noteGiamGia}";
+                }
+
+                // =========================================================
+                // 🚀 3. TỰ ĐỘNG PHÂN CÔNG NHÂN VIÊN THEO TẦNG (Giữ nguyên)
                 // =========================================================
                 string maNhanVienPhuTrach = null;
                 if (!string.IsNullOrEmpty(donDatBan.MaBan))
                 {
-                    // Lấy thông tin cái Bàn đó để xem nó nằm ở Tầng nào
                     var thongTinBan = await _context.Bans.FirstOrDefaultAsync(b => b.MaBan == donDatBan.MaBan);
 
                     if (thongTinBan != null && !string.IsNullOrEmpty(thongTinBan.MaTang))
                     {
-                        // Kiểm tra mã tầng. Dùng Contains để cho chắc chắn (VD: "T1", "TANG1", "01" đều bắt được)
                         if (thongTinBan.MaTang.Contains("1"))
                         {
                             maNhanVienPhuTrach = "NV001";
@@ -126,19 +174,24 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                         }
                     }
                 }
-                // =========================================================
 
-                // 2. TÍNH TOÁN TIỀN BẠC
+                // =========================================================
+                // 💰 4. TÍNH TOÁN TIỀN BẠC (CÓ ÁP DỤNG TRỪ ĐIỂM)
+                // =========================================================
                 decimal tongTienMonAn = dto.Items.Sum(i => i.GiaTaiThoiDiem * i.SoLuong);
                 decimal vat = Math.Round(tongTienMonAn * 0.1m); // VAT 10%
-                decimal tongBill = tongTienMonAn + vat;
+                decimal tongBillGoc = tongTienMonAn + vat;
 
-                decimal soTienCanCoc = Math.Round(tongBill * dto.PhanTramCoc / 100);
+                // Tổng tiền sau cùng (Dùng Math.Max để đảm bảo không bao giờ bị âm tiền nếu lỡ giảm quá lố)
+                decimal tongBillThucTe = Math.Max(0, tongBillGoc - tienGiamGia);
 
-                donDatBan.TongTienDatTruoc = tongBill;
+                // 💥 Tiền cọc được tính trên TỔNG BILL THỰC TẾ (Đã trừ điểm)
+                decimal soTienCanCoc = Math.Round(tongBillThucTe * dto.PhanTramCoc / 100);
+
+                donDatBan.TongTienDatTruoc = tongBillThucTe;
                 donDatBan.TienCoc = 0;
 
-                // 3. TẠO ĐƠN HÀNG VÀ GẮN MÃ NHÂN VIÊN VÀO
+                // 5. TẠO ĐƠN HÀNG VÀ GẮN MÃ NHÂN VIÊN VÀO
                 var donHang = new DonHang
                 {
                     MaDonHang = "DH" + DateTime.Now.Ticks.ToString().Substring(10, 8),
@@ -149,13 +202,11 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                     MaDonDat = dto.MaDonDat,
                     MaBan = donDatBan.MaBan,
                     MaNguoiDung = donDatBan.MaNguoiDung ?? dto.MaNguoiDung,
-
-                    // 👉 DỮ LIỆU TỰ ĐỘNG PHÂN CÔNG CHUI VÀO ĐÂY
                     MaNhanVienNhan = maNhanVienPhuTrach
                 };
                 _context.DonHangs.Add(donHang);
 
-                // 4. THÊM CHI TIẾT ĐƠN HÀNG
+                // 6. THÊM CHI TIẾT ĐƠN HÀNG
                 int index = 1;
                 foreach (var item in dto.Items)
                 {
@@ -167,7 +218,7 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                         SoLuong = item.SoLuong,
                         Size = item.Size,
                         MucDo = item.MucDo,
-                        GiaTaiThoiDiem = item.GiaTaiThoiDiem,
+                        GiaTaiThoiDiem = item.GiaTaiThoiDiem, // Vẫn lưu giá gốc từng món ăn để báo cáo doanh thu không bị sai lệch
                         GhiChu = item.GhiChu,
                         TrangThaiBep = 0
                     };
@@ -175,6 +226,7 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                     index++;
                 }
 
+                // 7. LƯU TOÀN BỘ VÀ CHỐT GIAO DỊCH
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
@@ -183,13 +235,14 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
                     success = true,
                     message = "Lưu đơn hàng thành công!",
                     maDonDat = donDatBan.MaDonDat,
-                    tongBill = tongBill,
+                    tongBill = tongBillThucTe,
                     soTienCanCoc = soTienCanCoc,
                     phanTramCoc = dto.PhanTramCoc
                 });
             }
             catch (Exception ex)
             {
+                // NẾU CÓ LỖI: Hoàn tác toàn bộ! Điểm của khách sẽ không bị trừ.
                 await transaction.RollbackAsync();
                 return StatusCode(500, new { success = false, message = "Lỗi hệ thống: " + ex.Message });
             }
@@ -258,7 +311,7 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
         }
 
         // ==============================================================
-        // 7. API GIẢI PHÓNG BÀN (Chuyển sang Trạng thái 4 & Đồng bộ Đơn Đặt Bàn)
+        // 7. API GIẢI PHÓNG BÀN (Tự động hủy món thừa & Báo SignalR)
         // ==============================================================
         [HttpPost("GiaiPhongBan/{maDonHang}")]
         public async Task<IActionResult> GiaiPhongBan(string maDonHang)
@@ -270,21 +323,44 @@ namespace QuanLyQuanCafeAnYenBackend.Controllers
             // 2. Chuyển trạng thái hóa đơn sang 4 (Hoàn tất)
             donHang.TrangThai = 4;
 
-            // 3. 💥 LOGIC MỚI: TÌM VÀ ĐỒNG BỘ CHO ĐƠN ĐẶT BÀN (NẾU CÓ)
-            // Kiểm tra xem đơn hàng này có xuất phát từ việc khách đặt bàn online không
+            // 3. ĐỒNG BỘ ĐƠN ĐẶT BÀN (NẾU CÓ)
             if (!string.IsNullOrEmpty(donHang.MaDonDat))
             {
-                // Tìm lại cái lịch đặt bàn gốc đó
                 var donDatBan = await _context.DonDatBans.FirstOrDefaultAsync(d => d.MaDonDat == donHang.MaDonDat);
-
-                if (donDatBan != null)
-                {
-                    // Chuyển luôn Lịch đặt bàn sang 4 (Để nhả chỗ cho khách mới đặt Online)
-                    donDatBan.TrangThai = 4;
-                }
+                if (donDatBan != null) donDatBan.TrangThai = 4;
             }
 
-            // 4. Lưu tất cả thay đổi xuống Database
+            // 4. 💥 QUÉT VÀ HỦY MÓN CHƯA HOÀN THÀNH
+            var monChuaXong = await _context.ChiTietDonHangs
+                .Where(ct => ct.MaDonHang == maDonHang && ct.TrangThaiBep < 3)
+                .ToListAsync();
+
+            if (monChuaXong.Any())
+            {
+                // Chuyển toàn bộ món dang dở thành -1 (Đã hủy)
+                foreach (var item in monChuaXong)
+                {
+                    item.TrangThaiBep = -1;
+                }
+
+                // Lấy tên bàn để phóng loa
+                string tenBan = "Mang đi";
+                if (!string.IsNullOrEmpty(donHang.MaBan))
+                {
+                    var ban = await _context.Bans.FirstOrDefaultAsync(b => b.MaBan == donHang.MaBan);
+                    if (ban != null) tenBan = ban.TenBan;
+                }
+
+                // 💥 BẮN THÔNG BÁO CHO BẾP BIẾT ĐỂ NGỪNG PHA CHẾ
+                await _hubContext.Clients.All.SendAsync("ReceiveOrderUpdate", new
+                {
+                    msg = $"🛑 Bàn {tenBan} đã đi về. Bếp vui lòng NGỪNG LÀM các món còn lại nhé!",
+                    orderId = maDonHang,
+                    tableName = tenBan
+                });
+            }
+
+            // 5. Lưu tất cả thay đổi
             await _context.SaveChangesAsync();
             return Ok(new { success = true, message = "Đã dọn bàn và nhả chỗ thành công!" });
         }

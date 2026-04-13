@@ -8,6 +8,7 @@
 
         // THÊM BIẾN NÀY ĐỂ NHẬN MỨC CỌC TỪ FRONTEND (0, 30, hoặc 100)
         public int PhanTramCoc { get; set; }
+        public int SoDiemMuonDung { get; set; }
 
         public List<CartItemDto> Items { get; set; } = new List<CartItemDto>();
     }
